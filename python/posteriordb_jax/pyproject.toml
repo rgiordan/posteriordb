@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "posteriordb_jax"
+version = "0.1.0"
+description = "JAX/TensorFlow Probability translations of posteriordb Stan models, with a Stan-comparison testing framework."
+requires-python = ">=3.10"
+dependencies = [
+    "jax",
+    "tensorflow-probability",
+    "bridgestan",
+    "numpy",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+include = ["posteriordb_jax*"]
