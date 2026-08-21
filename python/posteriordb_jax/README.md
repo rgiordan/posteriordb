@@ -16,21 +16,65 @@ compiled Stan model via [BridgeStan](https://roualdes.us/bridgestan/) (see
 
 ## Status
 
-Converted so far, each with a passing BridgeStan-comparison test
-(`tests/test_<name>.py`) checking log density, gradient, and Hessian in
-unconstrained space, plus the constrained-space flat vector:
+87 of the 120 Stan models in this repo are converted so far
+(`posteriordb_jax/models/`, registered in `MODEL_REGISTRY`), each with a
+passing BridgeStan-comparison test (`tests/test_<name>.py`) checking log
+density, gradient, and Hessian in unconstrained space, plus the
+constrained-space flat vector (Hessian skipped for a handful of very
+large-free-dimension models -- see their test files). The first few
+establishing each constraint type or a notable pattern:
 
-| Model | Constraint types exercised |
+| Model | Constraint types / pattern exercised |
 |---|---|
-| `eight_schools_noncentered` | unconstrained, `lower` |
+| `eight_schools_noncentered` / `eight_schools_centered` | unconstrained, `lower` |
 | `hmm_example` | `simplex`, `positive_ordered` |
 | `dogs_nonhierarchical` | `lower`, `cholesky_factor_corr`, matrix-shaped unconstrained param |
+| `low_dim_gauss_mix` / `normal_mixture` / `normal_mixture_k` | `ordered`, `lower_upper`, `simplex` (mixture likelihoods, `log_mix`/`log_sum_exp`) |
+| `arK` / `radon_county` / `radon_county_intercept` | vector-shaped params, lagged/grouped-index likelihoods |
+| `ldaK2` / `ldaK5` | **array-of-simplex** (`array[M] simplex[K]`), Dirichlet priors, gather-based mixture likelihood |
+| `arma11` | sequential `lax.scan` recursion (`err[t]` depends on `err[t-1]`) |
+| `dogs` / `dogs_log` | cumulative-count recursion, a plain-`vector` parameter whose *prior* (not type) is one-sided (`uniform(-100,0)`) |
+| `gp_regr` | Gaussian process: `gp_exp_quad_cov` kernel + `jnp.linalg.cholesky`, `multi_normal_cholesky` likelihood |
+| `hier_2pl` | `cholesky_factor_corr` composed into a batched `multi_normal_cholesky` prior (not just a standalone correlation matrix) |
+| `M0_model` / `Mt_model` | capture-recapture mixture likelihoods (`log_sum_exp` over a latent present/absent indicator) |
+| `diamonds` / `logistic_regression_rhs` | `StudentT`/`InverseGamma` priors, `normal_id_glm_lpdf`/`bernoulli_logit_glm`, a regularized-horseshoe (`d=5966`-predictor) sparse regression |
+| `lsat_model` | run-length-encoded data expansion (`jnp.repeat`) from a compact "response pattern" representation |
+
+The rest are mostly single/multi-covariate linear or logistic ("GLM")
+regressions, rate/binomial models, and centered/noncentered hierarchical
+(varying-intercept/-slope) regressions (the `wells_*`, `kidscore_*`,
+`logearn_*`, `logmesquite_*`, `Rate_*`, `radon_*`, `seeds_*` families, plus
+`blr`, `mesquite`, `nes_logit_model`, `nes`, `pilots`, `kilpisjarvi`,
+`dugongs_model`, `surgical_model`, `GLM_Poisson_model`, `GLMM_Poisson_model`,
+`GLM_Binomial_model`, `GLMM1_model`, `rats_model`, `bym2_offset_only`,
+`irt_2pl`) -- mechanical translations reusing `unconstrained`/`lower`/
+`lower_upper`, listed in full in `MODEL_REGISTRY`
+(`posteriordb_jax/models/__init__.py`).
 
 `cov_matrix`/`cholesky_factor_cov` are implemented and unit-tested against
 BridgeStan directly (`tests/test_stan_bijectors.py`) but not yet exercised
 by a converted model (no model in this repo has one as a *free* parameter).
 `unit_vector` and a fully general `corr_matrix` are not implemented (see
-"Known gaps" below).
+"Known gaps" below). Models with a parameter-declared bound that depends on
+*another parameter* (e.g. `garch11`'s `real<lower=0,upper=(1-alpha1)>
+beta1`) are also skipped for now -- `ParameterSpec.bounds` is static, and
+supporting this would need a genuinely new (small) piece of framework
+machinery; not yet built.
+
+### A note on Hessian tolerances in large/large-magnitude models
+
+Several tests for models with large `N` (e.g. `radon_pooled`, `radon_county*`,
+N~12,573) or large raw-data magnitudes (e.g. `earn_height`'s dollar-valued
+`earn`, `kilpisjarvi`'s `x` in the thousands) pass a looser `atol_hessian`
+(and occasionally `atol`/`atol_log_density`) to `ComparisonReport.assert_within`
+than the default `1e-6`. In every case this was verified to be **magnitude-driven
+float64 noise, not a formula bug**: `max_abs_err_constrained_flat` (never
+loosened) stays at machine epsilon, confirming the bijector/transform is exact,
+while the *relative* error in the log density/gradient/Hessian stays ~1e-13 to
+1e-16 even as the loosened absolute tolerance grows -- a standard-normal
+*unconstrained* synthetic draw can imply large residuals for models with no
+informative prior pinning parameters near a good fit, which is what drives the
+raw magnitude up. See the comment on each such test for the specific numbers.
 
 ## Quickstart
 
@@ -186,6 +230,51 @@ knowing before touching `stan_bijectors.py` or adding a new constraint type:
   tiny (~1.4e-7), **L-independent** constant (gradient-invariant) -- almost
   certainly just differing floating-point paths through the log-gamma
   normalizing constant, not a formula difference.
+- **BridgeStan's `param_unc_names()` is actively misleading for "array of
+  simplex" parameters** (`array[M] simplex[K]`, added to support `ldaK2`/
+  `ldaK5`/`hmm_gaussian`-style models -- see `ParameterSpec.free_shape`).
+  It reports an interleaved "M-fastest" name order for the *unconstrained*
+  parameters -- matching the order the *constrained* array actually uses
+  (`flatten_order == "F"`) -- but the free vector's actual VALUES are laid
+  out row-major/blockwise instead (all of array-element 1's K-1 free
+  coordinates, then element 2's, ...). Discovered by feeding a known vector
+  to an `array[M] simplex[K]` BridgeStan model and to M separate
+  single-`simplex[K]` models and comparing per-block outputs, not by
+  trusting names -- see `ParameterSpec.free_flatten_order`'s docstring and
+  `tests/test_stan_bijectors.py::test_simplex_array_matches_bridgestan`.
+  **Never trust `param_unc_names()`'s order for this constraint-type
+  combination; verify with values.**
+- **A Stan `~ uniform(a, b)` (or any) sampling statement is a prior, not a
+  type-level bound**, even when it looks like one. `dogs_log.stan` declares
+  `vector[2] beta;` (fully unconstrained) but gives it `beta[1] ~
+  uniform(-100, 0)` / `beta[2] ~ uniform(0, 100)` in the model block --
+  modeling `beta` as a `LOWER_UPPER`-constrained `ParameterSpec` (an earlier
+  version of `dogs_log.py` did) is wrong: it applies a `Sigmoid` bijector
+  Stan never applies, so even the *constrained* value disagrees with Stan,
+  not just the log density. The correct translation declares `beta`
+  `UNCONSTRAINED` and adds the `uniform(...).log_prob(...)` terms explicitly
+  in `log_density` -- which, correctly, evaluates to `-inf` whenever a
+  synthetic unconstrained draw lands outside the stated interval (matching
+  Stan's own `uniform_lpdf` behavior exactly). A symptom that flags this
+  mistake: `max_abs_err_constrained_flat` staying nonzero no matter how
+  small `n_synthetic`'s draw `scale` gets -- every other constraint type's
+  constrained-flat check goes to machine epsilon; if it doesn't, suspect a
+  bound that shouldn't be there.
+- **`tfd.StudentT` (and likely other multi-parameter TFP distributions)
+  infers its dtype from `(df, loc, scale)` at *construction* time, before
+  ever seeing the sample passed to `.log_prob()`.** Bare Python
+  floats/ints -- including hyperparameters pulled straight out of a
+  posteriordb `data` JSON file, e.g. `nu_local`/`scale_global` in
+  `logistic_regression_rhs.py`, or literal `3.0`/`8.0`/`10.0` in
+  `diamonds.py` -- get silently taken as `float32` by TFP, which then
+  raises a **hard `TypeError`** (not silent precision loss) the first time
+  `.log_prob()` is called with a float64 sample: `Found incompatible
+  dtypes, float64 and float32`. Unlike the elementwise `Normal`/`Gamma`/
+  `Beta` calls used everywhere else in this codebase (which happened not to
+  trigger this), every `df`/`loc`/`scale` argument to `StudentT` needs an
+  explicit `jnp.asarray(v, dtype=jnp.float64)` cast -- the same discipline
+  `constraints.py`'s `_f64` helper already uses for bound literals, for
+  exactly the same reason.
 
 ## Known gaps
 

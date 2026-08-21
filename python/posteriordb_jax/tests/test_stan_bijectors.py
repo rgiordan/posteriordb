@@ -104,6 +104,52 @@ def test_simplex_matches_bridgestan(rng, k):
         np.testing.assert_allclose(x_back, x, atol=1e-6)
 
 
+@pytest.mark.parametrize("m,k", [(1, 3), (2, 3), (3, 4), (2, 4)])
+def test_simplex_array_matches_bridgestan(rng, m, k):
+    """Stan's `array[M] simplex[K] theta` -- exercises `ParameterSpec`'s
+    "array of simplex" support (`free_shape`, `constraints.py`/`flatten.py`)
+    via the same `StanSimplex(K)` bijector applied per-row, relying on TFP's
+    event_ndims-based batching.
+
+    Real discovery made while writing this test: the free (unconstrained)
+    vector and the constrained array use DIFFERENT element orders, and
+    BridgeStan's own `param_unc_names()` is actively misleading about the
+    free vector's -- it reports an "M-fastest" interleaved order (matching
+    the constrained array's, which really is M-fastest / Fortran /
+    `flatten_order == "F"`), but the free vector's actual VALUES are laid
+    out row-major/blockwise ("C": all of element 1's K-1 free coords, then
+    element 2's, ...) -- confirmed here by feeding a known vector to this
+    array model and to M separate single-`simplex[K]` models and comparing
+    per-block, not by trusting names. See `ParameterSpec.free_flatten_order`.
+    """
+    stan_file = STAN_FIXTURES / "probe_simplex_array.stan"
+    model = bridgestan_model(stan_file, {"M": m, "K": k})
+    b = StanSimplex(k)
+    n = k - 1
+    assert model.param_unc_num() == m * n
+
+    for _ in range(5):
+        # Free vector is laid out (m, n) row-major/"C" (m slowest) -- NOT
+        # Fortran, despite param_unc_names() suggesting otherwise.
+        x_mat = rng.normal(size=(m, n))
+        x_flat = x_mat.reshape(-1, order="C")
+
+        constrained_stan = np.asarray(model.param_constrain(x_flat))
+        # Constrained array IS Fortran/"F" (m fastest) -- matches names and
+        # the existing `flatten_order` convention for shape length>=2.
+        constrained_jax = np.asarray(b.forward(jnp.asarray(x_mat))).reshape(-1, order="F")
+        np.testing.assert_allclose(constrained_jax, constrained_stan, atol=1e-8)
+
+        lp_true = model.log_density(x_flat, propto=False, jacobian=True)
+        lp_false = model.log_density(x_flat, propto=False, jacobian=False)
+        stan_logdet = lp_true - lp_false
+        jax_logdet = float(b.forward_log_det_jacobian(jnp.asarray(x_mat), event_ndims=2))
+        np.testing.assert_allclose(jax_logdet, stan_logdet, atol=1e-6)
+
+        x_back = np.asarray(b.inverse(jnp.asarray(constrained_jax.reshape(m, k, order="F"))))
+        np.testing.assert_allclose(x_back.reshape(-1, order="C"), x_flat, atol=1e-6)
+
+
 # ---------------------------------------------------------------------------
 # StanCholeskyFactorCorr
 # ---------------------------------------------------------------------------

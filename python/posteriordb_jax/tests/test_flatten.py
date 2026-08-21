@@ -81,6 +81,41 @@ def test_matrix_column_major_element_keys():
     np.testing.assert_allclose(z_back, z)
 
 
+def _simplex_array_spec():
+    return ModelSpec(
+        (
+            ParameterSpec("mu", (), ConstraintType.UNCONSTRAINED),
+            ParameterSpec("theta", (3, 4), ConstraintType.SIMPLEX),  # array[3] simplex[4]
+        )
+    )
+
+
+def test_simplex_array_constrain_unconstrain_round_trip(rng=np.random.default_rng(3)):
+    ms = _simplex_array_spec()
+    assert ms.free_dim == 1 + 3 * 3
+    assert ms.constrained_dim == 1 + 3 * 4
+
+    x = jnp.asarray(rng.normal(size=ms.free_dim))
+    params, logdet_fwd = ms.constrain(x)
+    assert params["theta"].shape == (3, 4)
+    np.testing.assert_allclose(np.sum(np.asarray(params["theta"]), axis=-1), np.ones(3), atol=1e-10)
+
+    x_back, logdet_inv = ms.unconstrain(params)
+    np.testing.assert_allclose(x_back, x, atol=1e-6)
+    np.testing.assert_allclose(logdet_fwd, -logdet_inv, atol=1e-6)
+
+
+def test_simplex_array_constrain_batched(rng=np.random.default_rng(4)):
+    ms = _simplex_array_spec()
+    x = jnp.asarray(rng.normal(size=(6, ms.free_dim)))
+    params, logdet = ms.constrain(x)
+    assert params["theta"].shape == (6, 3, 4)
+    assert logdet.shape == (6,)
+    params0, logdet0 = ms.constrain(x[0])
+    np.testing.assert_allclose(params["theta"][0], params0["theta"], atol=1e-8)
+    np.testing.assert_allclose(logdet[0], logdet0, atol=1e-8)
+
+
 def test_vector_element_keys():
     ms = ModelSpec((ParameterSpec("theta", (3,), ConstraintType.UNCONSTRAINED),))
     theta = jnp.array([1.0, 2.0, 3.0])

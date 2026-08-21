@@ -121,11 +121,21 @@ class ModelSpec:
         offset = 0
         for s in self.specs:
             chunk = unconstrained_flat[..., offset : offset + s.free_size]
-            raw = s.bijector.forward(chunk)
+            # No-op reshape for every type except an "array of simplex"
+            # SIMPLEX spec, where this restores the leading array dims
+            # before calling the bijector -- see `ParameterSpec.free_shape`
+            # and (importantly) `.free_flatten_order`.
+            free_chunk = _unflatten_last_dim(chunk, s.free_shape, s.free_flatten_order)
+            raw = s.bijector.forward(free_chunk)
             params[s.name] = raw if s.bijector_output_is_shaped else _unflatten_last_dim(
                 raw, s.shape, s.flatten_order
             )
-            logdet = logdet + s.bijector.forward_log_det_jacobian(chunk, event_ndims=1)
+            # event_ndims=len(free_shape): 1 for every existing type
+            # (unchanged); for array-of-simplex it's >1, and TFP's bijector
+            # machinery automatically sums the per-instance log-det over
+            # the extra leading ("array of") dims beyond the bijector's own
+            # forward_min_event_ndims -- no per-type special-casing needed.
+            logdet = logdet + s.bijector.forward_log_det_jacobian(free_chunk, event_ndims=len(s.free_shape))
             offset += s.free_size
         return params, logdet
 
@@ -139,7 +149,12 @@ class ModelSpec:
             else:
                 inp, event_ndims = _flatten_last_dims(x, len(s.shape), s.flatten_order), 1
             chunk = s.bijector.inverse(inp)
-            chunks.append(chunk)
+            # No-op reshape for every type except an "array of simplex"
+            # SIMPLEX spec, where `chunk` comes back with the leading array
+            # dims still attached (shape == free_shape) and must be
+            # flattened before concatenation with the other specs' flat
+            # (free_size,) chunks.
+            chunks.append(_flatten_last_dims(chunk, len(s.free_shape), s.free_flatten_order))
             ildj = s.bijector.inverse_log_det_jacobian(inp, event_ndims=event_ndims)
             logdet = ildj if logdet is None else logdet + ildj
         return jnp.concatenate(chunks, axis=-1), logdet

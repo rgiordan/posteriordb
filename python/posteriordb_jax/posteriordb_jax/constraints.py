@@ -92,8 +92,14 @@ class ParameterSpec:
     bounds: Tuple[Optional[float], Optional[float]] = (None, None)
 
     def __post_init__(self):
+        if self.constraint == ConstraintType.SIMPLEX:
+            # Leading dims beyond the last are Stan's "array of simplex"
+            # (e.g. `array[M] simplex[K]`) -- the last dim is always the
+            # simplex dimension K. A bare `simplex[K]` is just the M=()
+            # case.
+            if len(self.shape) < 1:
+                raise ValueError(f"{self.constraint} requires at least a 1-D shape, got {self.shape}")
         if self.constraint in (
-            ConstraintType.SIMPLEX,
             ConstraintType.ORDERED,
             ConstraintType.POSITIVE_ORDERED,
         ):
@@ -116,7 +122,10 @@ class ParameterSpec:
     def free_size(self) -> int:
         c = self.constraint
         if c == ConstraintType.SIMPLEX:
-            return self.shape[0] - 1
+            # shape[:-1] is Stan's "array of" leading dims (empty for a
+            # bare simplex[K]); each independent K-simplex contributes K-1
+            # free coordinates.
+            return int(math.prod(self.shape[:-1])) * (self.shape[-1] - 1)
         if c in (ConstraintType.ORDERED, ConstraintType.POSITIVE_ORDERED):
             return self.shape[0]
         if c == ConstraintType.CHOLESKY_FACTOR_CORR:
@@ -153,6 +162,54 @@ class ParameterSpec:
         return self.constraint in _SHAPED_OUTPUT
 
     @property
+    def free_shape(self) -> Tuple[int, ...]:
+        """Shape a flat `(free_size,)` chunk is reshaped into before being
+        handed to `.bijector.forward` (and the shape `.bijector.inverse`
+        returns), as opposed to `.shape` (the full constrained array
+        shape). Equal to `(free_size,)` -- a flat vector, i.e. a no-op
+        reshape -- for every constraint type except SIMPLEX with leading
+        "array of simplex" dims (e.g. `array[M] simplex[K]`), where it's
+        `shape[:-1] + (K-1,)`: the same leading dims as `.shape`, with the
+        trailing simplex dimension K replaced by its free dimension K-1.
+
+        `ModelSpec.constrain`/`.unconstrain` pass `len(free_shape)` as
+        `event_ndims` to the bijector, relying on TFP's standard behavior
+        of summing a bijector's own per-instance log-det-Jacobian over any
+        leading dims beyond its declared `forward_min_event_ndims` -- so
+        `StanSimplex` (which already supports arbitrary leading batch dims
+        in `_forward`/`_inverse`/`_forward_log_det_jacobian`) handles the
+        "array of" case with no per-type special-casing in `flatten.py`.
+        See `free_flatten_order` for the (surprising) element order used
+        to reshape a flat chunk into this shape."""
+        if self.constraint == ConstraintType.SIMPLEX:
+            return self.shape[:-1] + (self.shape[-1] - 1,)
+        return (self.free_size,)
+
+    @property
+    def free_flatten_order(self) -> str:
+        """Element order used to reshape a flat `(free_size,)` chunk into
+        `.free_shape` (and back) -- always "C" (row-major / blockwise: all
+        of array-element 1's free coordinates, then element 2's, ...).
+
+        This is a **real, empirically-confirmed discovery, not a design
+        choice**: for `array[M] simplex[K]`, BridgeStan's own
+        `param_unc_names()` reports an interleaved, "M-fastest" name order
+        for the *unconstrained* parameters (matching `.flatten_order` ==
+        "F", the order the *constrained* array actually uses) -- but the
+        free parameter VECTOR'S ACTUAL VALUES do not follow that order.
+        Feeding a BridgeStan-compiled `array[M] simplex[K]` model a known
+        unconstrained vector and comparing `param_constrain` against an
+        isolated single `simplex[K]` model fed each blockwise chunk
+        confirms the free vector is laid out row-major (element 1's K-1
+        free coords, then element 2's, ...), NOT in the order its own
+        `param_unc_names()` would suggest. Trust values, not names, for
+        this constraint type -- see
+        `tests/test_stan_bijectors.py::test_simplex_array_matches_bridgestan`
+        for the verification methodology. Irrelevant (a no-op either way)
+        for every constraint type where `free_shape` is already 1-D."""
+        return "C"
+
+    @property
     def flatten_order(self) -> str:
         """Element order used when flattening this parameter's constrained
         array to/from posteriordb's flat per-element naming convention.
@@ -181,7 +238,7 @@ class ParameterSpec:
         if c == ConstraintType.POSITIVE_ORDERED:
             return tfb.Chain([tfb.Cumsum(), tfb.Exp()])
         if c == ConstraintType.SIMPLEX:
-            return sb.StanSimplex(self.shape[0])
+            return sb.StanSimplex(self.shape[-1])
         if c == ConstraintType.CHOLESKY_FACTOR_CORR:
             return sb.StanCholeskyFactorCorr(self.shape[0])
         if c == ConstraintType.CHOLESKY_FACTOR_COV:
