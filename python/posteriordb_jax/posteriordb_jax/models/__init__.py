@@ -4,8 +4,10 @@
 from .arK import ArK
 from .arma11 import Arma11
 from .blr import Blr
+from .bones_model import BonesModel
 from .bym2_offset_only import Bym2OffsetOnly
 from .dogs import Dogs
+from .dogs_hierarchical import DogsHierarchical
 from .dogs_log import DogsLog
 from .dogs_nonhierarchical import DogsNonhierarchical
 from .diamonds import Diamonds
@@ -13,10 +15,12 @@ from .dugongs_model import DugongsModel
 from .earn_height import EarnHeight
 from .eight_schools_centered import EightSchoolsCentered
 from .eight_schools_noncentered import EightSchoolsNoncentered
+from .election88_full import Election88Full
 from .GLM_Poisson_model import GLMPoissonModel
 from .GLM_Binomial_model import GLMBinomialModel
 from .GLMM1_model import GLMM1Model
 from .GLMM_Poisson_model import GLMMPoissonModel
+from .gp_pois_regr import GpPoisRegr
 from .gp_regr import GpRegr
 from .hier_2pl import Hier2pl
 from .hmm_example import HmmExample
@@ -48,8 +52,12 @@ from .low_dim_gauss_mix import LowDimGaussMix
 from .low_dim_gauss_mix_collapse import LowDimGaussMixCollapse
 from .lsat_model import LsatModel
 from .M0_model import M0Model
+from .Mb_model import MbModel
 from .mesquite import Mesquite
+from .Mh_model import MhModel
 from .Mt_model import MtModel
+from .Mtbh_model import MtbhModel
+from .Mth_model import MthModel
 from .nes import Nes
 from .nes_logit_model import NesLogitModel
 from .normal_mixture import NormalMixture
@@ -79,6 +87,7 @@ from .seeds_model import SeedsModel
 from .seeds_stanified_model import SeedsStanifiedModel
 from .sesame_one_pred_a import SesameOnePredA
 from .surgical_model import SurgicalModel
+from .Survey_model import SurveyModel
 from .wells_daae_c_model import WellsDaaeCModel
 from .wells_dae_c_model import WellsDaeCModel
 from .wells_dae_inter_model import WellsDaeInterModel
@@ -177,4 +186,13 @@ MODEL_REGISTRY = {
     "Mt_model": MtModel,
     "bym2_offset_only": Bym2OffsetOnly,
     "lsat_model": LsatModel,
+    "election88_full": Election88Full,
+    "gp_pois_regr": GpPoisRegr,
+    "Survey_model": SurveyModel,
+    "dogs_hierarchical": DogsHierarchical,
+    "Mb_model": MbModel,
+    "Mh_model": MhModel,
+    "Mth_model": MthModel,
+    "Mtbh_model": MtbhModel,
+    "bones_model": BonesModel,
 }

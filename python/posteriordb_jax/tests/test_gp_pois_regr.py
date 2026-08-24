@@ -1,0 +1,31 @@
+import jax.numpy as jnp
+
+import posteriordb_jax  # noqa: F401
+from posteriordb_jax.io import load_data, stan_file_path
+from posteriordb_jax.models.gp_pois_regr import GpPoisRegr
+from posteriordb_jax.testing import StanComparisonHarness, assert_matches_stan
+
+
+def _load_model():
+    raw = load_data("gp_pois_regr")
+    data = {
+        "N": raw["N"],
+        "x": jnp.asarray(raw["x"], dtype=jnp.float64),
+        "k": raw["k"],
+    }
+    return GpPoisRegr(data), data
+
+
+def test_param_specs_order_matches_stan():
+    model, data = _load_model()
+    harness = StanComparisonHarness(stan_file_path("gp_pois_regr"), data)
+    assert harness.param_unc_num() == model.model_spec.free_dim
+    n = data["N"]
+    assert harness.param_unc_names() == ["rho", "alpha"] + [f"f_tilde.{i}" for i in range(1, n + 1)]
+
+
+def test_matches_bridgestan_log_density_grad_hessian():
+    model, data = _load_model()
+    harness = StanComparisonHarness(stan_file_path("gp_pois_regr"), data)
+    report = assert_matches_stan(model, harness, n_synthetic=20, seed=0, check_hessian=True, scale=0.5)
+    report.assert_within(atol=1e-5, atol_hessian=1e-3)

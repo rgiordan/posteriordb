@@ -16,7 +16,7 @@ compiled Stan model via [BridgeStan](https://roualdes.us/bridgestan/) (see
 
 ## Status
 
-87 of the 120 Stan models in this repo are converted so far
+96 of the 120 Stan models in this repo are converted so far
 (`posteriordb_jax/models/`, registered in `MODEL_REGISTRY`), each with a
 passing BridgeStan-comparison test (`tests/test_<name>.py`) checking log
 density, gradient, and Hessian in unconstrained space, plus the
@@ -34,11 +34,13 @@ establishing each constraint type or a notable pattern:
 | `ldaK2` / `ldaK5` | **array-of-simplex** (`array[M] simplex[K]`), Dirichlet priors, gather-based mixture likelihood |
 | `arma11` | sequential `lax.scan` recursion (`err[t]` depends on `err[t-1]`) |
 | `dogs` / `dogs_log` | cumulative-count recursion, a plain-`vector` parameter whose *prior* (not type) is one-sided (`uniform(-100,0)`) |
-| `gp_regr` | Gaussian process: `gp_exp_quad_cov` kernel + `jnp.linalg.cholesky`, `multi_normal_cholesky` likelihood |
+| `gp_regr` (+ `gp_pois_regr`) | Gaussian process: `gp_exp_quad_cov` kernel + `jnp.linalg.cholesky`, `multi_normal_cholesky` likelihood; `gp_pois_regr` reuses the same kernel code with a fixed `1e-10` jitter and a `poisson_log` likelihood on a whitened (`f = L_cov @ f_tilde`) GP draw instead |
 | `hier_2pl` | `cholesky_factor_corr` composed into a batched `multi_normal_cholesky` prior (not just a standalone correlation matrix) |
-| `M0_model` / `Mt_model` | capture-recapture mixture likelihoods (`log_sum_exp` over a latent present/absent indicator) |
+| `M0_model` / `Mt_model` (+ `Mb_model` / `Mh_model` / `Mth_model` / `Mtbh_model`) | capture-recapture mixture likelihoods (`log_sum_exp` over a latent present/absent indicator); the four later models each just swap in a different per-occasion detection-logit construction (behavioral "trap happy/shy" response, individual random effect, or both) built from data/parameters that already reduce correctly at `s[i]==0`, so no extra masking is needed beyond the shared `M0`/`Mt` pattern |
 | `diamonds` / `logistic_regression_rhs` | `StudentT`/`InverseGamma` priors, `normal_id_glm_lpdf`/`bernoulli_logit_glm`, a regularized-horseshoe (`d=5966`-predictor) sparse regression |
 | `lsat_model` | run-length-encoded data expansion (`jnp.repeat`) from a compact "response pattern" representation |
+| `Survey_model` | discrete-latent-variable ("number of surveys sent") marginalization via `log_sum_exp` over a vectorized `binomial_lpmf`; the invalid-domain (`n < max(k)`) branch is masked on the *input* to `Binomial` (clamping `total_count`) before masking the output, not just the output -- masking only the output still lets an invalid branch's `-inf`/`nan` leak into the gradient through `jnp.where`'s untaken-branch autodiff |
+| `bones_model` | ragged ordinal/graded-response likelihood: per-indicator category count `ncat[j]` varies (2..5), with `-1`-sentinel missing `grade[i,j]` entries contributing zero (not `log(0)`) to the log density; the `Q -> p` cumulative-probability construction is vectorized as one boundary-padded `Qext` array so no per-`ncat` special-casing is needed |
 
 The rest are mostly single/multi-covariate linear or logistic ("GLM")
 regressions, rate/binomial models, and centered/noncentered hierarchical
@@ -47,7 +49,8 @@ regressions, rate/binomial models, and centered/noncentered hierarchical
 `blr`, `mesquite`, `nes_logit_model`, `nes`, `pilots`, `kilpisjarvi`,
 `dugongs_model`, `surgical_model`, `GLM_Poisson_model`, `GLMM_Poisson_model`,
 `GLM_Binomial_model`, `GLMM1_model`, `rats_model`, `bym2_offset_only`,
-`irt_2pl`) -- mechanical translations reusing `unconstrained`/`lower`/
+`irt_2pl`, `election88_full`, `dogs_hierarchical`) -- mechanical translations
+reusing `unconstrained`/`lower`/
 `lower_upper`, listed in full in `MODEL_REGISTRY`
 (`posteriordb_jax/models/__init__.py`).
 
