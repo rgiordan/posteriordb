@@ -279,12 +279,12 @@ def test_unconstrained_pattern_like():
         pg.unconstrained_pattern_like({"a": "text"})
 
 
-def test_unconstrained_pattern_code_like():
+def test_unconstrained_pattern_code():
     value = {"beta": jnp.zeros(3), "s": 1.0, "not an identifier": jnp.zeros((2, 2))}
-    code = pg.unconstrained_pattern_code_like(value)
+    code = pg.unconstrained_pattern_like(value).code_to_generate()
     assert "beta=" not in code and "'not an identifier':" in code
     assert eval(code, {"pg": pg}) == pg.unconstrained_pattern_like(value)
-    code = pg.unconstrained_pattern_code_like({"beta": jnp.zeros(3), "inner": {"s": 1.0}})
+    code = pg.unconstrained_pattern_like({"beta": jnp.zeros(3), "inner": {"s": 1.0}}).code_to_generate()
     assert code == (
         "pg.PatternDict(\n"
         "    beta=pg.NumericVectorPattern(3),\n"
@@ -300,19 +300,19 @@ def test_arviz_round_trip():
     p = pg.PatternDict(beta=pg.NumericVectorPattern(2), sigma=pg.NumericScalarPattern(lb=0.0),
                        inner=pg.PatternDict(w=pg.SimplexArrayPattern(3), cov=pg.PSDSymmetricMatrixPattern(2)))
     free = jax.random.normal(jax.random.PRNGKey(0), (2, 5, p.free_length()))
-    idata = pg.free_draws_to_arviz(p, free, coords={"coef": ["a", "b"]}, dims={"beta": ["coef"]},
+    idata = pg.free_draws_to_arviz(pattern=p, draws=free, coords={"coef": ["a", "b"]}, dims={"beta": ["coef"]},
                                    extra_groups={"observed_data": {"y": np.zeros(4)}})
     post = idata["posterior"] if not hasattr(idata, "posterior") else idata.posterior
     assert set(post.data_vars) == {"beta", "sigma", "inner.w", "inner.cov"}
     assert post["inner.cov"].shape == (2, 5, 2, 2) and list(post["beta"].coords["coef"].values) == ["a", "b"]
-    np.testing.assert_allclose(pg.arviz_to_free_draws(p, idata), free, atol=1e-10)
-    folded = pg.arviz_to_folded_draws(p, idata)
+    np.testing.assert_allclose(pg.arviz_to_free_draws(pattern=p, data=idata), free, atol=1e-10)
+    folded = pg.arviz_to_folded_draws(pattern=p, data=idata)
     np.testing.assert_allclose(folded["inner"]["w"].sum(-1), 1.0)
-    flat = pg.arviz_to_flat_draws(p, idata)
+    flat = pg.folded_draws_to_flat(pattern=p, draws=folded)
     assert flat.shape == (2, 5, p.flat_length())
-    again = pg.flat_draws_to_arviz(p, flat, group="prior")
-    np.testing.assert_allclose(pg.arviz_to_free_draws(p, again, group="prior"), free, atol=1e-10)
+    again = pg.folded_draws_to_arviz(pattern=p, draws=pg.flat_draws_to_folded(pattern=p, draws=flat), group="prior")
+    np.testing.assert_allclose(pg.arviz_to_free_draws(pattern=p, data=again, group="prior"), free, atol=1e-10)
     # A single (non-dict) pattern is one variable named `name`.
     q = pg.SimplexArrayPattern(3)
-    d = pg.free_draws_to_arviz(q, free[..., :2], name="w")
-    np.testing.assert_allclose(pg.arviz_to_free_draws(q, d, name="w"), free[..., :2], atol=1e-10)
+    d = pg.free_draws_to_arviz(pattern=q, draws=free[..., :2], name="w")
+    np.testing.assert_allclose(pg.arviz_to_free_draws(pattern=q, data=d, name="w"), free[..., :2], atol=1e-10)

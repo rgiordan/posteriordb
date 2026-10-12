@@ -43,14 +43,12 @@ def folded_draws_to_arviz(pattern: Pattern, draws, *, group: str = "posterior", 
     return _from_dict(groups=groups, dims=dims, coords=coords)
 
 
-def free_draws_to_arviz(pattern: Pattern, draws, **kwargs):
-    """Like `folded_draws_to_arviz`, from free vectors of shape (chain, draw, free_length)."""
-    return folded_draws_to_arviz(pattern=pattern, draws=free_draws_to_folded(pattern=pattern, draws=draws), **kwargs)
-
-
-def flat_draws_to_arviz(pattern: Pattern, draws, **kwargs):
-    """Like `folded_draws_to_arviz`, from flat vectors of shape (chain, draw, flat_length)."""
-    return folded_draws_to_arviz(pattern=pattern, draws=flat_draws_to_folded(pattern=pattern, draws=draws), **kwargs)
+def free_draws_to_arviz(pattern: Pattern, draws, *, group: str = "posterior", name: str = "x",
+                        dims: Optional[Dict[str, list]] = None, coords: Optional[Dict[str, Any]] = None,
+                        extra_groups: Optional[Dict[str, Dict[str, Any]]] = None):
+    """`folded_draws_to_arviz` for free vectors of shape (chain, draw, free_length), as samplers return."""
+    return folded_draws_to_arviz(pattern=pattern, draws=free_draws_to_folded(pattern=pattern, draws=draws),
+                                 group=group, name=name, dims=dims, coords=coords, extra_groups=extra_groups)
 
 
 # -- ArviZ to draws ----------------------------------------------------------------
@@ -63,36 +61,28 @@ def arviz_to_folded_draws(pattern: Pattern, data, *, group: str = "posterior", n
     return variables_to_folded_draws(pattern=pattern, get=get, name=name)
 
 
-def arviz_to_free_draws(pattern: Pattern, data, **kwargs):
+def arviz_to_free_draws(pattern: Pattern, data, *, group: str = "posterior", name: str = "x"):
     """Free vectors of shape (chain, draw, free_length) from ArviZ `data`."""
-    return folded_draws_to_free(pattern=pattern, draws=arviz_to_folded_draws(pattern=pattern, data=data, **kwargs))
-
-
-def arviz_to_flat_draws(pattern: Pattern, data, **kwargs):
-    """Flat vectors of shape (chain, draw, flat_length) from ArviZ `data`."""
-    return folded_draws_to_flat(pattern=pattern, draws=arviz_to_folded_draws(pattern=pattern, data=data, **kwargs))
+    folded = arviz_to_folded_draws(pattern=pattern, data=data, group=group, name=name)
+    return folded_draws_to_free(pattern=pattern, draws=folded)
 
 
 # -- batches of draws --------------------------------------------------------------
 
-def _over_draws(f):
-    return jax.vmap(jax.vmap(f))
-
-
 def free_draws_to_folded(pattern: Pattern, draws):
-    return _over_draws(pattern.free_to_folded)(draws)
+    return jax.vmap(jax.vmap(pattern.free_to_folded))(draws)
 
 
 def flat_draws_to_folded(pattern: Pattern, draws):
-    return _over_draws(pattern.flat_to_folded)(draws)
+    return jax.vmap(jax.vmap(pattern.flat_to_folded))(draws)
 
 
 def folded_draws_to_free(pattern: Pattern, draws):
-    return _over_draws(pattern.folded_to_free)(draws)
+    return jax.vmap(jax.vmap(pattern.folded_to_free))(draws)
 
 
 def folded_draws_to_flat(pattern: Pattern, draws):
-    return _over_draws(pattern.folded_to_flat)(draws)
+    return jax.vmap(jax.vmap(pattern.folded_to_flat))(draws)
 
 
 # -- variables -----------------------------------------------------------------------

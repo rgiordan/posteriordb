@@ -3,9 +3,8 @@
 `unconstrained_pattern_like(value)` builds an unconstrained pattern that
 matches a nested structure of dicts, lists and tuples with arrays or
 numbers at the leaves. Every pattern's `code_to_generate()` prints Python
-code that rebuilds it, and `unconstrained_pattern_code_like(value)` does
-both at once, giving code to paste and then edit (for example to add
-constraints).
+code that rebuilds it, so `unconstrained_pattern_like(value).code_to_generate()`
+gives code to paste and then edit (for example to add constraints).
 """
 
 from __future__ import annotations
@@ -56,8 +55,3 @@ def unconstrained_pattern_like(value, *, default_name: str = "x") -> Pattern:
         return NumericArrayPattern(shape)
     raise TypeError(f"{default_name}: cannot build a pattern for a leaf of type {type(value).__name__}")
 
-
-def unconstrained_pattern_code_like(value, *, default_name: str = "x", module: str = "pg", indent: int = 4) -> str:
-    """Python code for `unconstrained_pattern_like(value)`, ready to paste and edit."""
-    pattern = unconstrained_pattern_like(value, default_name=default_name)
-    return pattern.code_to_generate(module=module, indent=indent)

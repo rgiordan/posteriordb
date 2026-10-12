@@ -9,10 +9,8 @@ A JAX rewrite of https://github.com/rgiordan/paragami (originally autograd).
 """
 
 from .arviz_io import (
-    arviz_to_flat_draws,
     arviz_to_folded_draws,
     arviz_to_free_draws,
-    flat_draws_to_arviz,
     flat_draws_to_folded,
     folded_draws_to_arviz,
     folded_draws_to_flat,
@@ -23,7 +21,7 @@ from .arviz_io import (
     variables_to_folded_draws,
 )
 from .base import BIJECTORS, Pattern, ValidationError, is_concrete
-from .codegen import unconstrained_pattern_code_like, unconstrained_pattern_like
+from .codegen import unconstrained_pattern_like
 from .containers import PatternArray, PatternDict
 from .functions import (
     function_input_flat_to_folded,
