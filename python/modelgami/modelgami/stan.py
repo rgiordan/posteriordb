@@ -15,10 +15,10 @@ the model is loaded. So, compared with a model written in JAX:
   Hessian-vector products from BridgeStan (finite differences of gradients
   unless BridgeStan was built with autodiff Hessians). There are no
   derivatives with respect to data or hyperparameters.
-- `with_data(new_data)` reloads the compiled library with new data; no
-  recompilation.
-- `fold_params` / `flatten_params` use Stan's own transforms, keyed by
-  Stan's parameter names.
+- For new data, call `from_bridgestan` again with the compiled library
+  (`model.bridgestan.lib_path`); nothing is recompiled.
+- `model.params_pattern` uses Stan's own transforms, with folded values
+  keyed by Stan's parameter names.
 
 It is mainly a reference to compare a JAX translation against
 (`modelgami.testing.assert_models_match`), and a way to run a method on a
@@ -35,47 +35,50 @@ import jax.numpy as jnp
 import numpy as np
 import paragami as pg
 
+from .dgp import DGP
 from .model import Model
+
+try:
+    import bridgestan
+except ImportError:  # optional extra modelgami[stan]
+    bridgestan = None
 
 _NAME = re.compile(r"^([^.]+)((?:\.[0-9]+)*)$")
 
 
 def from_bridgestan(stan_file_or_lib, data: Optional[dict] = None, *, name: Optional[str] = None,
-                    seed: int = 1234, **stan_kwargs) -> Model:
-    import bridgestan
-
+                    seed: int = 1234, **stan_kwargs) -> "StanModel":
+    """Load a Stan program (or a compiled library) with its data. For new
+    data, call it again with the library path (`model.bridgestan.lib_path`);
+    nothing is recompiled."""
+    if bridgestan is None:
+        raise ImportError("from_bridgestan needs BridgeStan: pip install 'modelgami[stan]'")
     bs = bridgestan.StanModel(str(stan_file_or_lib), _jsonable(data or {}), seed=seed, **stan_kwargs)
-    return _model_from(bs, data, name or bs.name(), seed)
+    return StanModel(bs=bs, data=data, name=name or bs.name())
 
 
-def _model_from(bs, data, name, seed):
-    lp = _differentiable_density(bs)
+class StanModel(Model):
+    """A `Model` whose log density is Stan's. Only the joint density of the
+    free parameters exists; `prior` and `likelihood` are empty DGPs."""
 
-    def log_density_free(x, jacobian):
-        return lp(x) if jacobian else _plain(bs, x)
+    def __init__(self, *, bs, data, name):
+        super().__init__(params_pattern=StanParamsPattern(bs), likelihood=DGP(), prior=DGP(), data=data, name=name)
+        self.bridgestan = bs
+        self._log_density = _differentiable_density(bs)
 
-    model = Model(
-        name=name,
-        params_pattern=StanParamsPattern(bs),
-        data=data,
-        log_density_free=log_density_free,
-        validate=False,
-    )
-    model._bridgestan = bs
+    def log_density_fn(self, which: str = "joint", *, params_as: str = "free",
+                       jacobian: Optional[bool] = None):
+        if (which, params_as) != ("joint", "free"):
+            raise NotImplementedError(f"{self.name} only provides the joint density of free parameters")
+        jacobian = True if jacobian is None else jacobian
 
-    def with_data(new_data=None, shared_data=None, hyper=None):
-        import bridgestan
+        def f(x):
+            return self._log_density(x) if jacobian else _plain(bs=self.bridgestan, x=x)
 
-        if hyper is not None or shared_data is not None:
-            raise NotImplementedError("Stan models take everything through data")
-        new_bs = bridgestan.StanModel(bs.lib_path, _jsonable(new_data or {}), seed=seed)
-        return _model_from(new_bs, new_data, name, seed)
-
-    model.with_data = with_data
-    return model
+        return f
 
 
-def _plain(bs, x):
+def _plain(*, bs, x):
     """Log density without the Jacobian; gradient via Stan too."""
     @jax.custom_jvp
     def f(x):
@@ -138,20 +141,28 @@ class StanParamsPattern(pg.Pattern):
         self._bs = bs
         self._stan_names = list(bs.param_names())
         self._shapes = _shapes_from_names(self._stan_names)
-        super().__init__(len(self._stan_names), bs.param_unc_num())
+        super().__init__(flat_length=len(self._stan_names), free_length=bs.param_unc_num())
 
     def as_dict(self):
         return {"stan_model": self._bs.name(), "shapes": self._shapes}
 
+    def code_to_generate(self, *, module: str = "pg", indent: int = 4) -> str:
+        raise NotImplementedError("a StanParamsPattern is built from a BridgeStan model: "
+                                  "use modelgami.from_bridgestan")
+
     def _flat_to_folded(self, flat):
-        return _fold_by_names(self._stan_names, self._shapes, flat)
+        return _fold_by_names(names=self._stan_names, shapes=self._shapes, flat=flat)
 
     def _folded_to_flat(self, folded):
         return jnp.asarray([jnp.asarray(folded[b])[i] for b, i in map(_parse, self._stan_names)])
 
     def _free_to_folded(self, free):
         flat = _cb(lambda x: self._bs.param_constrain(x), (len(self._stan_names),), free)
-        return self._flat_to_folded(flat), jnp.full((), jnp.nan)  # log det: use log_density_fn
+        return self._flat_to_folded(flat)
+
+    def _free_to_folded_log_det(self, free):
+        # Stan does not expose the log det alone; it is part of log_density_fn.
+        return jnp.full((), jnp.nan)
 
     def _folded_to_free(self, folded):
         flat = self._folded_to_flat(folded)
@@ -183,7 +194,7 @@ def _shapes_from_names(names: Sequence[str]) -> Dict[str, tuple]:
     return shapes
 
 
-def _fold_by_names(names, shapes, flat):
+def _fold_by_names(*, names, shapes, flat):
     out = {b: jnp.zeros(s) for b, s in shapes.items()}
     for j, (b, idx) in enumerate(map(_parse, names)):
         out[b] = out[b].at[idx].set(flat[j])

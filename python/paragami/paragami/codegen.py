@@ -1,76 +1,57 @@
-"""Python source code that rebuilds a pattern."""
+"""Write patterns for data structures you already have.
+
+`unconstrained_pattern_like(value)` builds an unconstrained pattern that
+matches a nested structure of dicts, lists and tuples with arrays or
+numbers at the leaves. Every pattern's `code_to_generate()` prints Python
+code that rebuilds it, so `unconstrained_pattern_like(value).code_to_generate()`
+gives code to paste and then edit (for example to add constraints).
+"""
 
 from __future__ import annotations
 
-import math
+import numbers
+
+import numpy as np
 
 from .base import Pattern
-from .containers import PatternArray, PatternDict
-from .matrix import CholeskyCorrPattern, CholeskyCovPattern, PSDSymmetricMatrixPattern
-from .numeric import NumericArrayPattern, NumericScalarPattern, NumericVectorPattern, OrderedVectorPattern
-from .simplex import SimplexArrayPattern
+from .containers import PatternDict
+from .numeric import NumericArrayPattern, NumericScalarPattern, NumericVectorPattern
 
 
-def pattern_to_code(pattern: Pattern, module: str = "pg", indent: int = 4) -> str:
-    """Python code that constructs `pattern`, assuming paragami is imported
-    as `module` (use `module=""` for names imported directly). Evaluating the
-    code gives a pattern equal to `pattern`; arguments at their defaults are
-    left out.
+def unconstrained_pattern_like(value, *, default_name: str = "x") -> Pattern:
+    """An unconstrained pattern whose folded values look like `value`.
 
-        print(pg.pattern_to_code(pattern))
+    `value` is a pytree of dicts, lists and tuples with arrays or numbers at
+    the leaves:
+
+    - a leaf becomes a pattern of its shape with no bounds (`NumericScalarPattern`,
+      `NumericVectorPattern` or `NumericArrayPattern`);
+    - a dict becomes a `PatternDict` with the same keys (converted to str);
+    - a list or tuple becomes a `PatternDict` keyed `f"{default_name}_{i}"`,
+      so its folded values are dicts, not lists; inside a dict, the default
+      is the dict key, so `{"w": [a, b]}` gives keys "w_0" and "w_1".
+
+    Integer leaves give float patterns.
     """
-    return _code(pattern, (module + ".") if module else "", " " * indent, 0)
+    if isinstance(value, dict):
+        out = PatternDict()
+        for k, v in value.items():
+            out[str(k)] = unconstrained_pattern_like(v, default_name=str(k))
+        return out
+    if isinstance(value, (list, tuple)):
+        out = PatternDict()
+        for i, v in enumerate(value):
+            name = f"{default_name}_{i}"
+            out[name] = unconstrained_pattern_like(v, default_name=name)
+        return out
+    if isinstance(value, numbers.Number) or hasattr(value, "shape"):
+        if np.issubdtype(np.asarray(value).dtype, np.complexfloating):
+            raise TypeError(f"{default_name}: complex values are not supported")
+        shape = np.shape(value)
+        if shape == ():
+            return NumericScalarPattern()
+        if len(shape) == 1:
+            return NumericVectorPattern(shape[0])
+        return NumericArrayPattern(shape)
+    raise TypeError(f"{default_name}: cannot build a pattern for a leaf of type {type(value).__name__}")
 
-
-def _num(x) -> str:
-    if math.isinf(x):
-        return 'float("inf")' if x > 0 else '-float("inf")'
-    return repr(float(x))
-
-
-def _call(prefix, name, args, kwargs):
-    parts = [*args] + [f"{k}={v}" for k, v in kwargs.items()]
-    return f"{prefix}{name}({', '.join(parts)})"
-
-
-def _code(p: Pattern, prefix: str, ind: str, depth: int) -> str:
-    kw = {}
-    if isinstance(p, PatternDict):
-        if not len(p):
-            return _call(prefix, "PatternDict", [], {"free_default": p.free_default} if p.free_default is not None else {})
-        inner, outer = ind * (depth + 1), ind * depth
-        entries = [(k, _code(v, prefix, ind, depth + 1)) for k, v in p.items()]
-        if all(k.isidentifier() for k, _ in entries):
-            body = ",\n".join(f"{inner}{k}={c}" for k, c in entries)
-        else:
-            body = f"{inner}{{\n" + ",\n".join(f"{inner}{ind}{k!r}: {c}" for k, c in entries) + f",\n{inner}}}"
-        if p.free_default is not None:
-            body += f",\n{inner}free_default={p.free_default}"
-        return f"{prefix}PatternDict(\n{body},\n{outer})"
-
-    if p.free_default is not None:
-        kw["free_default"] = p.free_default
-    t = type(p)
-    if t in (NumericScalarPattern, NumericVectorPattern, NumericArrayPattern):
-        bounds = {}
-        if p.lb != -math.inf:
-            bounds["lb"] = _num(p.lb)
-        if p.ub != math.inf:
-            bounds["ub"] = _num(p.ub)
-        if t is NumericScalarPattern:
-            return _call(prefix, t.__name__, [], {**bounds, **kw})
-        if t is NumericVectorPattern:
-            return _call(prefix, t.__name__, [str(p.shape[0])], {**bounds, **kw})
-        order = {"order": repr(p.order)} if p.order != "C" else {}
-        return _call(prefix, t.__name__, [repr(p.shape)], {**bounds, **order, **kw})
-    if t is OrderedVectorPattern:
-        return _call(prefix, t.__name__, [str(p.length)], {**({"positive": "True"} if p.positive else {}), **kw})
-    if t is SimplexArrayPattern:
-        shape = {"array_shape": repr(p.array_shape)} if p.array_shape else {}
-        return _call(prefix, t.__name__, [str(p.simplex_size)], {**shape, **kw})
-    if t in (CholeskyCovPattern, CholeskyCorrPattern, PSDSymmetricMatrixPattern):
-        return _call(prefix, t.__name__, [str(p.size)], kw)
-    if t is PatternArray:
-        base = _code(p.base_pattern, prefix, ind, depth)
-        return _call(prefix, t.__name__, [repr(p.array_shape), base], kw)
-    raise TypeError(f"pattern_to_code does not know how to write a {t.__name__}")
