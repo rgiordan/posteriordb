@@ -110,7 +110,9 @@ class PatternDict(Pattern):
         return None
 
     def _names(self, free):
-        return [f"{k}{n}" for k, p in self._patterns.items() for n in p._names(free)]
+        # Nested dicts are joined with ".": "outer.inner[0]".
+        return [k + ("." if n and not n.startswith("[") else "") + n
+                for k, p in self._patterns.items() for n in p._names(free)]
 
 
 class PatternArray(Pattern):

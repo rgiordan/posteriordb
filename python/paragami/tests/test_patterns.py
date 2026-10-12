@@ -160,3 +160,8 @@ def test_free_default_and_keyword_errors():
     q = pg.NumericScalarPattern(lb=0.0, free_default=True)
     np.testing.assert_allclose(q.flatten(1.0), 0.0)
     np.testing.assert_allclose(q.fold(jnp.zeros(1)), 1.0)
+
+
+def test_nested_dict_names():
+    p = pg.PatternDict(a=pg.PatternDict(b=pg.NumericVectorPattern(2), c=pg.NumericScalarPattern()), d=pg.NumericScalarPattern())
+    assert p.flat_names() == ["a.b[0]", "a.b[1]", "a.c", "d"]
