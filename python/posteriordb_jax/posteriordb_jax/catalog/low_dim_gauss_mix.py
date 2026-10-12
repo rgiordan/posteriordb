@@ -35,7 +35,7 @@ def log_lik_one(params, datum, hyper):
 
 def sample_one(key, params, datum, hyper):
     k1, k2 = jax.random.split(key)
-    z = jax.random.bernoulli(k1, params["theta"]).astype(int)
+    z = jax.random.bernoulli(k1, p=params["theta"]).astype(int)
     comp = 1 - z  # component 0 with probability theta
     return {"y": params["mu"][comp] + params["sigma"][comp] * jax.random.normal(k2)}
 
