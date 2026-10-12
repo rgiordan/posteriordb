@@ -9,6 +9,7 @@
 `beta` has an improper flat prior (no term).
 """
 
+import jax
 import jax.numpy as jnp
 from jax.scipy import stats
 
@@ -29,7 +30,6 @@ def log_lik_one(params, datum, hyper):
 
 
 def sample_one(key, params, datum, hyper):
-    import jax
     mean = params["beta"][0] + params["beta"][1] * datum["mom_iq"]
     return {"kid_score": mean + params["sigma"] * jax.random.normal(key)}
 

@@ -37,22 +37,31 @@ import paragami as pg
 
 from .model import Model
 
+try:
+    import bridgestan
+except ImportError:  # optional extra modelgami[stan]
+    bridgestan = None
+
 _NAME = re.compile(r"^([^.]+)((?:\.[0-9]+)*)$")
 
 
 def from_bridgestan(stan_file_or_lib, data: Optional[dict] = None, *, name: Optional[str] = None,
                     seed: int = 1234, **stan_kwargs) -> Model:
-    import bridgestan
-
+    _require_bridgestan()
     bs = bridgestan.StanModel(str(stan_file_or_lib), _jsonable(data or {}), seed=seed, **stan_kwargs)
-    return _model_from(bs, data, name or bs.name(), seed)
+    return _model_from(bs=bs, data=data, name=name or bs.name(), seed=seed)
 
 
-def _model_from(bs, data, name, seed):
+def _require_bridgestan():
+    if bridgestan is None:
+        raise ImportError("from_bridgestan needs BridgeStan: pip install 'modelgami[stan]'")
+
+
+def _model_from(*, bs, data, name, seed):
     lp = _differentiable_density(bs)
 
     def log_density_free(x, jacobian):
-        return lp(x) if jacobian else _plain(bs, x)
+        return lp(x) if jacobian else _plain(bs=bs, x=x)
 
     model = Model(
         name=name,
@@ -64,18 +73,16 @@ def _model_from(bs, data, name, seed):
     model._bridgestan = bs
 
     def with_data(new_data=None, shared_data=None, hyper=None):
-        import bridgestan
-
         if hyper is not None or shared_data is not None:
             raise NotImplementedError("Stan models take everything through data")
         new_bs = bridgestan.StanModel(bs.lib_path, _jsonable(new_data or {}), seed=seed)
-        return _model_from(new_bs, new_data, name, seed)
+        return _model_from(bs=new_bs, data=new_data, name=name, seed=seed)
 
     model.with_data = with_data
     return model
 
 
-def _plain(bs, x):
+def _plain(*, bs, x):
     """Log density without the Jacobian; gradient via Stan too."""
     @jax.custom_jvp
     def f(x):
@@ -138,20 +145,28 @@ class StanParamsPattern(pg.Pattern):
         self._bs = bs
         self._stan_names = list(bs.param_names())
         self._shapes = _shapes_from_names(self._stan_names)
-        super().__init__(len(self._stan_names), bs.param_unc_num())
+        super().__init__(flat_length=len(self._stan_names), free_length=bs.param_unc_num())
 
     def as_dict(self):
         return {"stan_model": self._bs.name(), "shapes": self._shapes}
 
+    def code_to_generate(self, *, module: str = "pg", indent: int = 4) -> str:
+        raise NotImplementedError("a StanParamsPattern is built from a BridgeStan model: "
+                                  "use modelgami.from_bridgestan")
+
     def _flat_to_folded(self, flat):
-        return _fold_by_names(self._stan_names, self._shapes, flat)
+        return _fold_by_names(names=self._stan_names, shapes=self._shapes, flat=flat)
 
     def _folded_to_flat(self, folded):
         return jnp.asarray([jnp.asarray(folded[b])[i] for b, i in map(_parse, self._stan_names)])
 
     def _free_to_folded(self, free):
         flat = _cb(lambda x: self._bs.param_constrain(x), (len(self._stan_names),), free)
-        return self._flat_to_folded(flat), jnp.full((), jnp.nan)  # log det: use log_density_fn
+        return self._flat_to_folded(flat)
+
+    def _free_to_folded_log_det(self, free):
+        # Stan does not expose the log det alone; it is part of log_density_fn.
+        return jnp.full((), jnp.nan)
 
     def _folded_to_free(self, folded):
         flat = self._folded_to_flat(folded)
@@ -183,7 +198,7 @@ def _shapes_from_names(names: Sequence[str]) -> Dict[str, tuple]:
     return shapes
 
 
-def _fold_by_names(names, shapes, flat):
+def _fold_by_names(*, names, shapes, flat):
     out = {b: jnp.zeros(s) for b, s in shapes.items()}
     for j, (b, idx) in enumerate(map(_parse, names)):
         out[b] = out[b].at[idx].set(flat[j])

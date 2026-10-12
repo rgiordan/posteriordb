@@ -28,7 +28,7 @@ def to_arviz(model, draws, params_as: str = "folded", *, log_likelihood: bool = 
     dims, coords: ArviZ dims/coords for parameters and data. Observation
         fields of exchangeable data get the dimension `obs_dim`.
     """
-    posterior = _as_folded_draws(model, draws, params_as)
+    posterior = _as_folded_draws(model=model, draws=draws, params_as=params_as)
     groups = {}
     dims = dict(dims or {})
     if model.exchangeable:
@@ -46,21 +46,21 @@ def to_arviz(model, draws, params_as: str = "folded", *, log_likelihood: bool = 
         if const:
             groups["constant_data"] = const
     if prior is not None:
-        groups["prior"] = pg.folded_draws_to_variables(model.params_pattern, prior)
+        groups["prior"] = pg.folded_draws_to_variables(pattern=model.params_pattern, draws=prior)
     for name, value in (("posterior_predictive", posterior_predictive), ("prior_predictive", prior_predictive)):
         if value is not None:
             groups[name] = _np(value)
 
-    return pg.folded_draws_to_arviz(model.params_pattern, posterior, dims=dims, coords=coords,
+    return pg.folded_draws_to_arviz(pattern=model.params_pattern, draws=posterior, dims=dims, coords=coords,
                                     extra_groups=groups)
 
 
-def _as_folded_draws(model, draws, params_as):
+def _as_folded_draws(*, model, draws, params_as):
     if params_as == "folded":
         return jax.tree_util.tree_map(jnp.asarray, draws)
     if params_as == "free":
-        return pg.free_draws_to_folded(model.params_pattern, jnp.asarray(draws))
-    return pg.flat_draws_to_folded(model.params_pattern, jnp.asarray(draws))
+        return pg.free_draws_to_folded(pattern=model.params_pattern, draws=jnp.asarray(draws))
+    return pg.flat_draws_to_folded(pattern=model.params_pattern, draws=jnp.asarray(draws))
 
 
 def _np(tree):

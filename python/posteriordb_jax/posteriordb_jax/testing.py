@@ -24,15 +24,24 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
+import jax
+import jax.numpy as jnp
 import numpy as np
+
+from .stan_names import values_by_names
+
+try:
+    import bridgestan
+except ImportError:  # optional extra posteriordb_jax[stan]
+    bridgestan = None
 
 
 class StanComparisonHarness:
     """Thin wrapper around one compiled BridgeStan model."""
 
     def __init__(self, stan_file, data: dict):
-        import bridgestan
-
+        if bridgestan is None:
+            raise ImportError("the Stan comparison needs BridgeStan: pip install 'posteriordb_jax[stan]'")
         self.bs_model = bridgestan.StanModel(str(stan_file), _jsonable(data))
 
     def param_unc_num(self) -> int:
@@ -122,8 +131,6 @@ def assert_matches_stan(
     `ParameterSpec`s to be declared in the same order as Stan's
     `parameters`-block variables (so the flat unconstrained/constrained
     vectors line up index-for-index)."""
-    import jax.numpy as jnp
-
     assert harness.param_unc_num() == model.model_spec.free_dim, (
         f"free dim mismatch: Stan={harness.param_unc_num()} vs model={model.model_spec.free_dim}"
     )
@@ -163,7 +170,7 @@ def assert_model_matches_stan(
 ) -> ComparisonReport:
     """`assert_matches_stan` for new-style `modelgami.Model`s: the same
     unconstrained vector goes to BridgeStan and to
-    `model.log_density_fn("joint", "free")`. Constrained values are matched
+    `model.log_density_fn("joint", params_as="free")`. Constrained values are matched
     by Stan's element names, so array layout never matters; the free
     vector's layout must match Stan's (pattern order = Stan's `parameters`
     block order).
@@ -171,11 +178,6 @@ def assert_model_matches_stan(
     Errors are *scaled*: |jax - stan| / (1 + |stan|), elementwise, so one
     set of tolerances works for models with large data magnitudes or N
     (where absolute float64 noise grows with the size of the quantity)."""
-    import jax
-    import jax.numpy as jnp
-
-    from .stan_names import values_by_names
-
     assert harness.param_unc_num() == model.free_dim, (
         f"free dim mismatch: Stan={harness.param_unc_num()} vs model={model.free_dim}"
     )
@@ -194,7 +196,7 @@ def assert_model_matches_stan(
         x_np = rng.normal(scale=scale, size=harness.param_unc_num())
         x = jnp.asarray(x_np)
         c_stan = harness.param_constrain(x_np)
-        c_jax = values_by_names(model.fold_params(x), names)
+        c_jax = values_by_names(model.fold_params(x, from_free=True), names)
         report.max_abs_err_constrained_flat = max(report.max_abs_err_constrained_flat, err(c_jax, c_stan))
         lp_stan, grad_stan = harness.log_density_gradient(x_np, propto=False, jacobian=True)
         report.max_abs_err_log_density = max(report.max_abs_err_log_density, err(f(x), lp_stan))

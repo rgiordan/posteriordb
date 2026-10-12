@@ -15,3 +15,6 @@ test = ["pytest", "arviz"]
 
 [tool.setuptools.packages.find]
 include = ["paragami*"]
+
+[tool.pytest.ini_options]
+markers = ["stan: compiles a Stan model with BridgeStan (slow; deselect with -m 'not stan')"]

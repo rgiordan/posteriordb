@@ -72,7 +72,7 @@ The hand-written hooks remain the interface methods rely on; the adapter just ge
 
 `mg.from_bridgestan("model.stan", data)` wraps a Stan program as a `Model` (optional extra `modelgami[stan]`):
 
-- Its `log_density_fn("joint", "free")` is Stan's log density. It works with `jax.grad`, `jax.hessian`, `mg.hvp`, `jit` and `vmap`, and the derivatives come from Stan itself.
+- Its `log_density_fn("joint", params_as="free")` is Stan's log density. It works with `jax.grad`, `jax.hessian`, `mg.hvp`, `jit` and `vmap`, and the derivatives come from Stan itself.
 - `fold_params` and `flatten_params` use Stan's own transforms.
 - `with_data` reloads the compiled library with new data, without recompiling.
 

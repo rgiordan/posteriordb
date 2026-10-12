@@ -14,6 +14,11 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+try:
+    from tensorflow_probability.substrates import jax as tfp
+except Exception:  # not installed, or incompatible with this JAX version
+    tfp = None
+
 import posteriordb_jax  # noqa: F401  (enables x64)
 from posteriordb_jax.stan_bijectors import (
     StanCholeskyFactorCorr,
@@ -288,8 +293,6 @@ def test_corr_matrix_cholesky_outer_product_boundary(rng, k, expect_match):
     test just pins down and documents the boundary so it isn't silently
     rediscovered later.
     """
-    import tensorflow_probability.substrates.jax as tfp
-
     tfb = tfp.bijectors
     stan_file = STAN_FIXTURES / "probe_corr_matrix.stan"
     model = bridgestan_model(stan_file, {"K": k})
@@ -304,8 +307,6 @@ def test_corr_matrix_cholesky_outer_product_boundary(rng, k, expect_match):
 
 @pytest.mark.parametrize("k", [1, 2, 3, 4])
 def test_cov_matrix_composed_matches_bridgestan(rng, k):
-    import tensorflow_probability.substrates.jax as tfp
-
     tfb = tfp.bijectors
     stan_file = STAN_FIXTURES / "probe_cov_matrix.stan"
     model = bridgestan_model(stan_file, {"K": k})

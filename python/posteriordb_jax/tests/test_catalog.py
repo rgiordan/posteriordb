@@ -34,7 +34,7 @@ def test_matches_old_translation(name):
     if mod.STAN_MODEL == "wells_dist":
         data["switched"] = raw["switched"]
     old = MODEL_REGISTRY[mod.STAN_MODEL](data)
-    f = model.log_density_fn("joint", "free")
+    f = model.log_density_fn("joint", params_as="free")
     for k in jax.random.split(jax.random.PRNGKey(0), 5):
         x = jax.random.normal(k, (model.free_dim,))
         np.testing.assert_allclose(f(x), old.log_prob_unconstrained(x), rtol=1e-9, atol=1e-6)

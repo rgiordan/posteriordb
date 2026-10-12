@@ -38,8 +38,8 @@ def test_same_model(models):
         p = hand.random_params(k)
         np.testing.assert_allclose(npm.log_prior(p), hand.log_prior(p), rtol=1e-10)
         np.testing.assert_allclose(npm.log_lik_pointwise(p), hand.log_lik_pointwise(p), rtol=1e-10)
-        x = npm.flatten_params(p)
-        np.testing.assert_allclose(npm.log_density_fn()(x), hand.log_density_fn()(hand.flatten_params(p)), rtol=1e-10)
+        x = npm.flatten_params(p, to_free=True)
+        np.testing.assert_allclose(npm.log_density_fn()(x), hand.log_density_fn()(hand.flatten_params(p, to_free=True)), rtol=1e-10)
 
 
 def test_contract_and_simulation(models):

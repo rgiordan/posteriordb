@@ -39,35 +39,43 @@ import paragami as pg
 
 from .model import Model
 
+try:
+    from numpyro import handlers
+    from numpyro.distributions import constraints as c
+    from numpyro.primitives import Messenger
+except ImportError:  # optional extra modelgami[numpyro]
+    handlers = c = None
+    Messenger = object
+
 
 def from_numpyro(model_fn: Callable, data, hyper=None, *, shared_data=None, exchangeable: bool = False,
                  params_pattern: Optional[pg.Pattern] = None, name: Optional[str] = None, **kwargs) -> Model:
     """`model_fn(data, hyper)` is a NumPyro program; see the module docstring.
     Extra keyword arguments (e.g. `check_data`) are passed to `Model`."""
-    from numpyro import handlers
-
+    if handlers is None:
+        raise ImportError("from_numpyro needs NumPyro: pip install 'modelgami[numpyro]'")
     hyper = {} if hyper is None else hyper
     full_data = _stack(data)
     if shared_data:
         full_data = {**full_data, **shared_data}
 
-    def trace(params, d, h, key=None, resample=()):
+    def trace(*, params, d, h, key=None, resample=()):
         fn = model_fn
         if resample:
-            fn = _Unobserve(fn, set(resample))
-        fn = handlers.seed(fn, jax.random.PRNGKey(0) if key is None else key)
+            fn = _Unobserve(fn, names=set(resample))
+        fn = handlers.seed(fn, rng_seed=jax.random.PRNGKey(0) if key is None else key)
         if params is not None:
             fn = handlers.substitute(fn, data=params)
         return handlers.trace(fn).get_trace(d, h)
 
-    tr = trace(None, full_data, hyper)
+    tr = trace(params=None, d=full_data, h=hyper)
     latent = [k for k, s in tr.items() if s["type"] == "sample" and not s["is_observed"]]
     observed = [k for k, s in tr.items() if s["type"] == "sample" and s["is_observed"]]
     if params_pattern is None:
-        params_pattern = pg.PatternDict({k: pattern_for_support(tr[k]["fn"].support, jnp.shape(tr[k]["value"]))
+        params_pattern = pg.PatternDict({k: pattern_for_support(tr[k]["fn"].support, shape=jnp.shape(tr[k]["value"]))
                                          for k in latent})
 
-    def site_sum(t, names, pointwise=False):
+    def site_sum(t, names, *, pointwise=False):
         total = 0.0
         for k in names:
             lp = t[k]["fn"].log_prob(t[k]["value"])
@@ -75,22 +83,22 @@ def from_numpyro(model_fn: Callable, data, hyper=None, *, shared_data=None, exch
         return total
 
     def log_prior(params, h):
-        return site_sum(trace(params, full_data, h), latent)
+        return site_sum(trace(params=params, d=full_data, h=h), latent)
 
     def sample_prior(key, h):
-        t = trace(None, full_data, h, key=key)
+        t = trace(params=None, d=full_data, h=h, key=key)
         return {k: t[k]["value"] for k in latent}
 
     def sample_data(key, params, d, h):
-        t = trace(params, d, h, key=key, resample=observed)
+        t = trace(params=params, d=d, h=h, key=key, resample=observed)
         return {**d, **{k: t[k]["value"] for k in observed if k in d}}
 
     hooks = dict(log_prior=log_prior if latent else None, sample_prior=sample_prior if latent else None)
     hooks = {k: v for k, v in hooks.items() if v is not None}
     if exchangeable:
-        hooks["log_lik_pointwise"] = lambda params, d, h: site_sum(trace(params, d, h), observed, pointwise=True)
+        hooks["log_lik_pointwise"] = lambda params, d, h: site_sum(trace(params=params, d=d, h=h), observed, pointwise=True)
     else:
-        hooks["log_lik"] = lambda params, d, h: site_sum(trace(params, d, h), observed)
+        hooks["log_lik"] = lambda params, d, h: site_sum(trace(params=params, d=d, h=h), observed)
     model = Model(params_pattern=params_pattern, data=data, shared_data=shared_data, hyper=hyper,
                   name=name or getattr(model_fn, "__name__", None), **hooks, **kwargs)
     # Simulation through the program; bound after construction because it
@@ -100,23 +108,21 @@ def from_numpyro(model_fn: Callable, data, hyper=None, *, shared_data=None, exch
     return model
 
 
-def _Unobserve(fn, names):
+class _Unobserve(Messenger):
     """A handler that turns the named observed sites back into draws."""
-    from numpyro.primitives import Messenger
 
-    class Unobserve(Messenger):
-        def process_message(self, msg):
-            if msg["type"] == "sample" and msg["name"] in names:
-                msg["is_observed"] = False
-                msg["value"] = None
+    def __init__(self, fn, *, names):
+        self.names = names
+        super().__init__(fn)
 
-    return Unobserve(fn)
+    def process_message(self, msg):
+        if msg["type"] == "sample" and msg["name"] in self.names:
+            msg["is_observed"] = False
+            msg["value"] = None
 
 
-def pattern_for_support(support, shape) -> pg.Pattern:
+def pattern_for_support(support, *, shape) -> pg.Pattern:
     """A paragami pattern for a NumPyro support (constraint) and value shape."""
-    from numpyro.distributions import constraints as c
-
     shape = tuple(shape)
     if support is c.real or support is c.real_vector:
         return pg.NumericArrayPattern(shape)
@@ -140,6 +146,10 @@ def pattern_for_support(support, shape) -> pg.Pattern:
         return pg.CholeskyCorrPattern(shape[0])
     if support is c.lower_cholesky and len(shape) == 2:
         return pg.CholeskyCovPattern(shape[0])
+    if support is c.corr_matrix and len(shape) == 2:
+        return pg.CorrMatrixPattern(shape[0])
+    if support is c.sphere and len(shape) == 1:
+        return pg.UnitVectorPattern(shape[0])
     if support is c.positive_definite and len(shape) == 2:
         return pg.PSDSymmetricMatrixPattern(shape[0])
     raise NotImplementedError(f"no paragami pattern for NumPyro support {support!r}; pass params_pattern=")

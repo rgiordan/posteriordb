@@ -3,6 +3,11 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+try:
+    from tensorflow_probability.substrates import jax as tfp
+except Exception:  # not installed, or incompatible with this JAX version
+    tfp = None
+
 import modelgami as mg
 from modelgami.examples import conjugate_regression as cr
 from modelgami.testing import assert_models_match, check_model_contract
@@ -50,7 +55,7 @@ def test_posterior_mode_by_optimization(setup):
         while f(x + t * step) < f(x) and t > 1e-8:
             t /= 2
         x = x + t * step
-    params = model.fold_params(x)
+    params = model.fold_params(x, from_free=True)
     post = cr.exact_posterior(X, y, model.hyper)
     p = X.shape[1]
     np.testing.assert_allclose(params["beta"], post["m0"], rtol=1e-8)
@@ -103,7 +108,7 @@ def test_derivatives_wrt_data_and_hyper(setup):
     # prior sensitivity: d/d m0 of the log evidence matches autodiff of the exact formula
     dev = jax.grad(lambda m0: cr.log_marginal_likelihood(X, y, {**model.hyper, "m0": m0}))(model.hyper["m0"])
     assert np.all(np.isfinite(dev))
-    gh = jax.grad(lambda h: model.log_density_fn("joint", "free")(x, hyper=h))(model.hyper)
+    gh = jax.grad(lambda h: model.log_density_fn("joint", params_as="free")(x, hyper=h))(model.hyper)
     assert gh["V0"].shape == (3, 3)
 
 
@@ -127,7 +132,7 @@ def test_sampling_and_validation(setup):
 
 def test_hvp(setup):
     _, _, model = setup
-    f = model.log_density_fn("joint", "free")
+    f = model.log_density_fn("joint", params_as="free")
     x, v = jnp.ones(model.free_dim) * 0.1, jnp.arange(model.free_dim, dtype=float)
     np.testing.assert_allclose(mg.hvp(f)(x, v), jax.hessian(f)(x) @ v, rtol=1e-8)
 
@@ -141,7 +146,7 @@ def test_arviz_export_and_loo(setup):
     loo = az.loo(idata)
     assert np.isfinite(float(getattr(loo, "elpd", getattr(loo, "elpd_loo", np.nan))))
     # free-vector draws give the same result
-    free = jax.vmap(jax.vmap(model.flatten_params))(draws)
+    free = jax.vmap(jax.vmap(lambda p: model.flatten_params(p, to_free=True)))(draws)
     idata2 = model.to_arviz(free, params_as="free")
     np.testing.assert_allclose(np.asarray(idata2["posterior"]["sigma2"]), np.asarray(draws["sigma2"]), rtol=1e-10)
 
@@ -190,9 +195,7 @@ def test_prior_dists_gives_density_and_sampler(setup):
 
 def test_dist_hooks_with_tfp(setup):
     """The same hooks work with TFP distributions (needs a TFP-compatible JAX)."""
-    try:
-        from tensorflow_probability.substrates import jax as tfp
-    except Exception:  # not installed, or incompatible with this JAX version
+    if tfp is None:
         pytest.skip("tensorflow_probability (JAX substrate) unavailable")
     tfd = tfp.distributions
     X, y, model = setup
