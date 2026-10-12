@@ -23,7 +23,14 @@ under `python/`:
 - [`modelgami`](../modelgami): the common model interface (replaces `model.py`'s `StatisticalModel`).
 - `posteriordb_jax`: this package. It holds the posteriordb translations, now as `modelgami.Model`s in `posteriordb_jax/catalog/`.
 
-Converted so far (9 Stan models, 10 posteriors): `blr`, `eight_schools_centered`, `eight_schools_noncentered`, `kidscore_momiq`, `kilpisjarvi`, `logearn_height`, `low_dim_gauss_mix`, `normal_mixture` and `wells_dist`. The new versions use `jax.scipy.stats` instead of TFP, separate prior from likelihood, and use `log_lik_one` wherever the data are exchangeable. `tests/test_catalog.py` checks each one against BridgeStan and against the old translation. The other models still live in `posteriordb_jax/models/` until they are converted.
+Converted so far (20 Stan models, 23 posteriors): `blr`, `earn_height`, `eight_schools_centered`, `eight_schools_noncentered`, `kidscore_interaction`, `kidscore_mom_work`, `kidscore_momhs`, `kidscore_momiq`, `kilpisjarvi`, `log10earn_height`, `logearn_height`, `logearn_height_male`, `logearn_interaction_z`, `logmesquite_logvolume`, `low_dim_gauss_mix`, `mesquite`, `normal_mixture`, `radon_pooled`, `wells_dist` and `wells_dist100_model`.
+
+- The new versions use `jax.scipy.stats` instead of TFP and separate the prior from the likelihood.
+- Wherever the data are exchangeable, they use `log_lik_one`. All but the two eight-schools models are exchangeable.
+- The linear regressions share `catalog/_regression.py`, so each of those is a feature function and a response.
+- `tests/test_catalog.py` checks each model against BridgeStan, against the old translation, and against the modelgami contract. The BridgeStan check uses scaled errors, |jax − stan| / (1 + |stan|), so one set of tolerances fits every model. Log densities and gradients agree to about 1e-14 or better.
+
+The other models still live in `posteriordb_jax/models/` until they are converted.
 
 ```python
 from posteriordb_jax import catalog

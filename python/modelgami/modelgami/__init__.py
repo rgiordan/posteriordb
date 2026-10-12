@@ -9,6 +9,7 @@ validation, simulation and ArviZ export generated for you.
 from .dgp import DGP
 from .model import Model, hvp
 from .numpyro_adapter import from_numpyro
+from .stan import from_bridgestan
 from .validation import ValidationError
 
 __version__ = "0.1.0.dev0"

@@ -12,6 +12,7 @@ dependencies = ["jax", "numpy", "paragami"]
 [project.optional-dependencies]
 arviz = ["arviz"]
 numpyro = ["numpyro"]
+stan = ["bridgestan"]
 test = ["pytest", "arviz", "numpyro"]
 
 [tool.setuptools.packages.find]

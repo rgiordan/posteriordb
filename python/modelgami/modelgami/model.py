@@ -52,7 +52,7 @@ _REPRESENTATIONS = ("folded", "flat", "free")
 _HOOKS = (
     "log_prior", "log_lik", "log_lik_one", "log_lik_pointwise",
     "sample_prior", "sample_one", "sample_data", "check_params", "check_data", "obs_dists_one",
-    "prior_dists",
+    "prior_dists", "log_density_free",
 )
 
 
@@ -104,7 +104,7 @@ class Model:
             u.setdefault("sample_prior", prior_sampler)
         if "log_lik" in u and ("log_lik_one" in u or "log_lik_pointwise" in u):
             raise TypeError("give either log_lik, or log_lik_one / log_lik_pointwise for exchangeable data, not both")
-        if "log_lik" not in u and "log_lik_one" not in u and "log_lik_pointwise" not in u:
+        if not ({"log_lik", "log_lik_one", "log_lik_pointwise", "log_density_free"} & set(u)):
             raise TypeError("a model needs log_lik, log_lik_one or log_lik_pointwise")
         self.exchangeable = "log_lik_one" in u or "log_lik_pointwise" in u
 
@@ -195,9 +195,10 @@ class Model:
             self._pointwise = pointwise
             self.log_lik_pointwise = self._defaults(pointwise)
         else:
-            log_lik = u["log_lik"]
+            log_lik = u.get("log_lik")
         self._log_lik = log_lik
-        self.log_lik = self._defaults(log_lik)
+        if log_lik is not None:
+            self.log_lik = self._defaults(log_lik)
         self._log_prior = u.get("log_prior")
         if self._log_prior is not None:
             self.log_prior = lambda params, hyper=None: self._log_prior(params, self._h(hyper))
@@ -246,6 +247,20 @@ class Model:
                    False for "lik". Data never get a Jacobian term.
         weights:   exchangeable models only; data weights for the likelihood.
         """
+        if "log_density_free" in self._user:
+            # A backend (e.g. Stan) whose density exists only as a function of
+            # the free vector, with the model's own data and hyperparameters.
+            if (which, params_as) != ("joint", "free"):
+                raise NotImplementedError(f"{self.name} only provides the joint density of free parameters")
+            backend = self._user["log_density_free"]
+            jac = True if jacobian is None else jacobian
+
+            def f_backend(p, data=None, hyper=None, weights=None):
+                if data is not None or hyper is not None or weights is not None:
+                    raise NotImplementedError(f"{self.name} has fixed data and hyperparameters; use with_data()")
+                return backend(p, jac)
+
+            return f_backend
         if which not in ("joint", "lik", "prior"):
             raise ValueError("which must be 'joint', 'lik' or 'prior'")
         for a in (params_as, data_as):
@@ -361,9 +376,11 @@ class Model:
         return DGP(self.log_prior, getattr(self, "sample_prior", None))
 
     @property
-    def likelihood(self) -> DGP:
+    def likelihood(self) -> Optional[DGP]:
         """log_density(params, data=None, hyper=None[, weights]);
         sample(key, params, data=None, hyper=None)."""
+        if getattr(self, "log_lik", None) is None:
+            return None
         return DGP(self.log_lik, getattr(self, "sample_data", None),
                    self.log_lik_pointwise if self.exchangeable else None)
 

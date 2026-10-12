@@ -158,7 +158,6 @@ def assert_model_matches_stan(
     *,
     n_synthetic: int = 20,
     seed: int = 0,
-    atol: float = 1e-6,
     check_hessian: bool = True,
     scale: float = 1.0,
 ) -> ComparisonReport:
@@ -167,7 +166,11 @@ def assert_model_matches_stan(
     `model.log_density_fn("joint", "free")`. Constrained values are matched
     by Stan's element names, so array layout never matters; the free
     vector's layout must match Stan's (pattern order = Stan's `parameters`
-    block order)."""
+    block order).
+
+    Errors are *scaled*: |jax - stan| / (1 + |stan|), elementwise, so one
+    set of tolerances works for models with large data magnitudes or N
+    (where absolute float64 noise grows with the size of the quantity)."""
     import jax
     import jax.numpy as jnp
 
@@ -182,16 +185,21 @@ def assert_model_matches_stan(
     names = harness.param_names()
     rng = np.random.default_rng(seed)
     report = ComparisonReport(n_draws=n_synthetic, check_hessian=check_hessian)
+
+    def err(a, b):
+        a, b = np.asarray(a), np.asarray(b)
+        return float(np.max(np.abs(a - b) / (1.0 + np.abs(b))))
+
     for _ in range(n_synthetic):
         x_np = rng.normal(scale=scale, size=harness.param_unc_num())
         x = jnp.asarray(x_np)
         c_stan = harness.param_constrain(x_np)
         c_jax = values_by_names(model.fold_params(x), names)
-        report.max_abs_err_constrained_flat = max(report.max_abs_err_constrained_flat, float(np.max(np.abs(c_jax - c_stan))))
+        report.max_abs_err_constrained_flat = max(report.max_abs_err_constrained_flat, err(c_jax, c_stan))
         lp_stan, grad_stan = harness.log_density_gradient(x_np, propto=False, jacobian=True)
-        report.max_abs_err_log_density = max(report.max_abs_err_log_density, abs(float(f(x)) - lp_stan))
-        report.max_abs_err_grad = max(report.max_abs_err_grad, float(np.max(np.abs(np.asarray(grad(x)) - grad_stan))))
+        report.max_abs_err_log_density = max(report.max_abs_err_log_density, err(f(x), lp_stan))
+        report.max_abs_err_grad = max(report.max_abs_err_grad, err(grad(x), grad_stan))
         if check_hessian:
             _, _, hess_stan = harness.log_density_hessian(x_np, propto=False, jacobian=True)
-            report.max_abs_err_hessian = max(report.max_abs_err_hessian, float(np.max(np.abs(np.asarray(hess(x)) - hess_stan))))
+            report.max_abs_err_hessian = max(report.max_abs_err_hessian, err(hess(x), hess_stan))
     return report

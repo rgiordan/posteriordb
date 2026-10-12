@@ -68,6 +68,16 @@ Probabilistic programming languages specify a model once and use the same progra
 
 The hand-written hooks remain the interface methods rely on; the adapter just generates them. See `tests/test_numpyro_adapter.py`, which checks it against the hand-written conjugate regression.
 
+### Stan programs as models (BridgeStan)
+
+`mg.from_bridgestan("model.stan", data)` wraps a Stan program as a `Model` (optional extra `modelgami[stan]`):
+
+- Its `log_density_fn("joint", "free")` is Stan's log density. It works with `jax.grad`, `jax.hessian`, `mg.hvp`, `jit` and `vmap`, and the derivatives come from Stan itself.
+- `fold_params` and `flatten_params` use Stan's own transforms.
+- `with_data` reloads the compiled library with new data, without recompiling.
+
+A Stan program has a single `target` and fixed data, so this backend has no prior/likelihood split, no pointwise terms, and no derivatives with respect to data. Its main use is as a reference for a JAX translation (`assert_models_match`), or to run a method on a Stan model as-is.
+
 Data shared across observations (sizes, design constants) go in `shared_data=`. `log_lik_one` sees them as part of `datum`.
 
 ## What you get

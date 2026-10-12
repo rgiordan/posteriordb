@@ -21,14 +21,25 @@ from ..stan_names import folded_draws_from_posteriordb
 
 _MODULES = [
     "blr",
+    "earn_height",
     "eight_schools_centered",
     "eight_schools_noncentered",
+    "kidscore_interaction",
+    "kidscore_mom_work",
+    "kidscore_momhs",
     "kidscore_momiq",
     "kilpisjarvi",
+    "log10earn_height",
     "logearn_height",
+    "logearn_height_male",
+    "logearn_interaction_z",
+    "logmesquite_logvolume",
     "low_dim_gauss_mix",
+    "mesquite",
     "normal_mixture",
+    "radon_pooled",
     "wells_dist",
+    "wells_dist100_model",
 ]
 
 
