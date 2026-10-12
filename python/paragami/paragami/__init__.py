@@ -8,6 +8,7 @@ A JAX rewrite of https://github.com/rgiordan/paragami (originally autograd).
 """
 
 from .base import Pattern, ValidationError, is_concrete
+from .codegen import pattern_to_code
 from .containers import PatternArray, PatternDict
 from .functions import (
     function_input_flat_to_folded,

@@ -8,7 +8,7 @@ import numpy as np
 
 from .base import Pattern
 from .containers import PatternDict
-from .numeric import NumericArrayPattern
+from .numeric import NumericArrayPattern, NumericScalarPattern, NumericVectorPattern
 
 
 def unconstrained_pattern_like(value, default_name: str = "x") -> Pattern:
@@ -17,7 +17,8 @@ def unconstrained_pattern_like(value, default_name: str = "x") -> Pattern:
     `value` is a pytree of dicts, lists and tuples with arrays or numbers at
     the leaves:
 
-    - a leaf becomes a `NumericArrayPattern` of its shape, with no bounds;
+    - a leaf becomes a pattern of its shape with no bounds (`NumericScalarPattern`,
+      `NumericVectorPattern` or `NumericArrayPattern`);
     - a dict becomes a `PatternDict` with the same keys (converted to str);
     - a list or tuple becomes a `PatternDict` keyed `f"{default_name}_{i}"`,
       so its folded values are dicts, not lists; inside a dict, the default
@@ -40,5 +41,10 @@ def unconstrained_pattern_like(value, default_name: str = "x") -> Pattern:
     if isinstance(value, numbers.Number) or hasattr(value, "shape"):
         if np.issubdtype(np.asarray(value).dtype, np.complexfloating):
             raise TypeError(f"{default_name}: complex values are not supported")
-        return NumericArrayPattern(np.shape(value))
+        shape = np.shape(value)
+        if shape == ():
+            return NumericScalarPattern()
+        if len(shape) == 1:
+            return NumericVectorPattern(shape[0])
+        return NumericArrayPattern(shape)
     raise TypeError(f"{default_name}: cannot build a pattern for a leaf of type {type(value).__name__}")

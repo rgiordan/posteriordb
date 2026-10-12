@@ -203,6 +203,26 @@ def test_unconstrained_pattern_like():
     # Names for unnamed containers come from default_name; a bare leaf is a single array pattern.
     assert list(pg.unconstrained_pattern_like((1.0, jnp.ones(3)), default_name="theta").keys()) == ["theta_0", "theta_1"]
     leaf = pg.unconstrained_pattern_like(jnp.ones((2, 3)))
-    assert isinstance(leaf, pg.NumericArrayPattern) and leaf.free_length() == 6
+    assert type(leaf) is pg.NumericArrayPattern and leaf.free_length() == 6
+    assert type(pg.unconstrained_pattern_like(1.0)) is pg.NumericScalarPattern
     with pytest.raises(TypeError):
         pg.unconstrained_pattern_like({"a": "text"})
+
+
+@pytest.mark.parametrize("name", list(_patterns()))
+def test_pattern_to_code_round_trip(name):
+    pattern = _patterns()[name]
+    code = pg.pattern_to_code(pattern)
+    assert eval(code, {"pg": pg}) == pattern
+    assert eval(pg.pattern_to_code(pattern, module=""), vars(pg)) == pattern
+
+
+def test_pattern_to_code_details():
+    p = pg.unconstrained_pattern_like({"beta": jnp.zeros(3), "s": 1.0, "not an identifier": jnp.zeros((2, 2))})
+    p["s"] = pg.NumericScalarPattern(lb=0.0, free_default=True)
+    code = pg.pattern_to_code(p)
+    assert "NumericScalarPattern(lb=0.0, free_default=True)" in code
+    assert "'not an identifier':" in code
+    rebuilt = eval(code, {"pg": pg})
+    assert rebuilt == p and rebuilt["s"].free_default is True
+    print(code)
