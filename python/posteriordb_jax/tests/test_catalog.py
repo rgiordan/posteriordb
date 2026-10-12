@@ -41,6 +41,15 @@ def test_matches_old_translation(name):
         np.testing.assert_allclose(jax.grad(f)(x), old.grad_unconstrained(x), rtol=1e-9, atol=1e-8)
 
 
+# Same loosened tolerances as the old tests for these posteriors: large data
+# magnitudes or N make float64 noise exceed the default absolute bounds
+# (see "A note on Hessian tolerances" in the README).
+TOLERANCES = {
+    "kilpisjarvi_mod-kilpisjarvi": dict(atol=1e-3, atol_hessian=1.0, atol_log_density=1e-3),
+    "wells_data-wells_dist": dict(atol=5e-5, atol_hessian=0.05, atol_log_density=5e-5),
+}
+
+
 @pytest.mark.stan
 @pytest.mark.parametrize("name", NAMES)
 def test_matches_stan(name):
@@ -48,7 +57,7 @@ def test_matches_stan(name):
     raw = load_data(load_posterior_info(name)["data_name"])
     harness = StanComparisonHarness(stan_file_path(catalog.module_for(name).STAN_MODEL), raw)
     report = assert_model_matches_stan(model, harness, n_synthetic=10, check_hessian=True)
-    report.assert_within(atol=1e-6, atol_hessian=1e-2, atol_log_density=1e-5)
+    report.assert_within(**TOLERANCES.get(name, dict(atol=1e-6, atol_hessian=1e-2, atol_log_density=1e-5)))
 
 
 def test_list_and_filter():
