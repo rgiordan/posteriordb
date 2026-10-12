@@ -84,7 +84,7 @@ Data shared across observations (sizes, design constants) go in `shared_data=`. 
 
 | | |
 |---|---|
-| `model.log_density_fn(which, params_as, data_as)` | `"joint"`, `"lik"` or `"prior"` as a JAX function of parameters (and data) in `"folded"` (dict), `"flat"` (constrained vector) or `"free"` (unconstrained vector) form. Use it with `jax.grad`, `jax.hessian`, `jax.vmap`, `jax.jit`, or `mg.hvp`. In free form the log Jacobian is included for `joint`/`prior` (`jacobian=False` turns it off). |
+| `model.log_density_fn(which, params_as, data_as)` | `"joint"`, `"lik"` or `"prior"` as a JAX function of parameters (and data) in `"folded"` (dict), `"flat"` (constrained vector) or `"free"` (unconstrained vector) form. Use it with `jax.grad`, `jax.hessian`, `jax.vmap`, `jax.jit`, or `mg.hvp`. By default each function is, up to a constant, the density it names with respect to the parameters you pass. So in free form the log Jacobian is included for `joint` and `prior` but not for `lik`, the likelihood. `jacobian=True` or `False` overrides this. |
 | `model.log_lik(params)`, `model.log_prior(params)` | Your hooks, with the model's data and hyperparameters as defaults. |
 | `model.log_lik_pointwise(params)` | Per-observation log likelihoods (exchangeable models). |
 | `model.log_lik(params, weights=w)` | Weighted likelihood; `jax.grad` with respect to `w` gives the influence of each observation. |

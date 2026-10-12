@@ -211,3 +211,19 @@ def test_dist_hooks_with_tfp(setup):
                      prior_dists=prior_dists, obs_dists_one=obs_dists_one)
     assert_models_match(model, other)
     check_model_contract(other)
+
+
+def test_jacobian_defaults_and_overrides(setup):
+    _, _, model = setup
+    # Defaults: the Jacobian goes with densities over the parameters (joint, prior),
+    # not with the likelihood; `jacobian=` turns it on or off for any of them.
+    key = jax.random.PRNGKey(3)
+    u = jax.random.normal(key, (model.free_dim,))
+    ldj = model.params_pattern.log_abs_det_unfreeing_jacobian(u)
+    assert jnp.abs(ldj) > 1e-3
+    for which, default_on in [("joint", True), ("prior", True), ("lik", False)]:
+        with_j = model.log_density_fn(which, jacobian=True)(u)
+        without_j = model.log_density_fn(which, jacobian=False)(u)
+        default = model.log_density_fn(which)(u)
+        assert jnp.allclose(with_j - without_j, ldj, rtol=1e-12, atol=1e-12)
+        assert jnp.allclose(default, with_j if default_on else without_j, rtol=1e-12, atol=1e-12)
