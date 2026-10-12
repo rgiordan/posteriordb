@@ -13,6 +13,8 @@ intuitive structures (dicts of arrays):
                                                        both log_lik_one and sample_one
     log_lik_pointwise(params, data, hyper) -> (N,)  -- all observations at once
     sample_prior(key, hyper) -> params              optional
+    prior_dists(hyper) -> {param: distribution or f(earlier params)}
+                                                    gives both log_prior and sample_prior
     sample_one(key, params, datum, hyper) -> datum  optional (exchangeable)
     sample_data(key, params, data, hyper) -> data   optional (general)
     check_params(params), check_data(data)          optional extra validation
@@ -50,6 +52,7 @@ _REPRESENTATIONS = ("folded", "flat", "free")
 _HOOKS = (
     "log_prior", "log_lik", "log_lik_one", "log_lik_pointwise",
     "sample_prior", "sample_one", "sample_data", "check_params", "check_data", "obs_dists_one",
+    "prior_dists",
 )
 
 
@@ -94,6 +97,11 @@ class Model:
                 raise TypeError("give either obs_dists_one or log_lik_one, not both")
             u["log_lik_one"], one_sampler = _from_obs_dists(u["obs_dists_one"])
             u.setdefault("sample_one", one_sampler)
+        if "prior_dists" in u:
+            if "log_prior" in u:
+                raise TypeError("give either prior_dists or log_prior, not both")
+            u["log_prior"], prior_sampler = _from_prior_dists(u["prior_dists"])
+            u.setdefault("sample_prior", prior_sampler)
         if "log_lik" in u and ("log_lik_one" in u or "log_lik_pointwise" in u):
             raise TypeError("give either log_lik, or log_lik_one / log_lik_pointwise for exchangeable data, not both")
         if "log_lik" not in u and "log_lik_one" not in u and "log_lik_pointwise" not in u:
@@ -411,6 +419,30 @@ def _from_obs_dists(obs_dists_one):
         return {k: _draw(d, kk).astype(jnp.asarray(datum[k]).dtype) for (k, d), kk in zip(ds.items(), keys)}
 
     return log_lik_one, sample_one
+
+
+def _from_prior_dists(prior_dists):
+    """log_prior and sample_prior from `prior_dists(hyper)`, which returns
+    a dict {param: distribution, or function(earlier params) -> distribution},
+    in an order where each entry depends only on earlier ones."""
+    def resolve(entry, params):
+        return entry(params) if callable(entry) and not hasattr(entry, "log_prob") else entry
+
+    def log_prior(params, hyper):
+        total = 0.0
+        for k, entry in prior_dists(hyper).items():
+            total = total + jnp.sum(resolve(entry, params).log_prob(params[k]))
+        return total
+
+    def sample_prior(key, hyper):
+        entries = prior_dists(hyper)
+        keys = jax.random.split(key, len(entries))
+        params = {}
+        for (k, entry), kk in zip(entries.items(), keys):
+            params[k] = _draw(resolve(entry, params), kk)
+        return params
+
+    return log_prior, sample_prior
 
 
 def _draw(d, key):

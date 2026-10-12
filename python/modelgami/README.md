@@ -44,6 +44,20 @@ def obs_dists_one(params, datum, hyper):
 model = mg.Model(..., obs_dists_one=obs_dists_one)   # gives log_lik_one and sample_one
 ```
 
+The prior works the same way, including parameters that depend on earlier ones:
+
+```python
+def prior_dists(hyper):
+    return {
+        "sigma2": dist.InverseGamma(hyper["a0"], hyper["b0"]),
+        "beta": lambda p: dist.MultivariateNormal(hyper["m0"], p["sigma2"] * hyper["V0"]),
+    }
+
+model = mg.Model(..., prior_dists=prior_dists)        # gives log_prior and sample_prior
+```
+
+These are optional; hand-written `log_*` and `sample_*` functions always work.
+
 ### One program for simulation and density (NumPyro)
 
 Probabilistic programming languages specify a model once and use the same program both to simulate and to evaluate the log density. `mg.from_numpyro(program, data, hyper, exchangeable=True)` turns a NumPyro program `program(data, hyper)` into a `Model`:

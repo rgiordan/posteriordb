@@ -162,3 +162,27 @@ def test_obs_dists_one_gives_density_and_sampler(setup):
     d = other.sample_data(jax.random.PRNGKey(8), p)
     assert d["y"].shape == y.shape and not np.allclose(d["y"], y)
     check_model_contract(other)
+
+
+def test_prior_dists_gives_density_and_sampler(setup):
+    """A dependent prior written once, as distributions that may depend on
+    earlier parameters."""
+    dist = pytest.importorskip("numpyro.distributions")
+    X, y, model = setup
+
+    def prior_dists(hyper):
+        return {
+            "sigma2": dist.InverseGamma(hyper["a0"], hyper["b0"]),
+            "beta": lambda p: dist.MultivariateNormal(hyper["m0"], p["sigma2"] * hyper["V0"]),
+        }
+
+    def obs_dists_one(params, datum, hyper):
+        return {"y": dist.Normal(datum["x"] @ params["beta"], jnp.sqrt(params["sigma2"]))}
+
+    other = mg.Model(params_pattern=model.params_pattern, data={"x": X, "y": y}, hyper=model.hyper,
+                     prior_dists=prior_dists, obs_dists_one=obs_dists_one)
+    assert_models_match(model, other)
+    check_model_contract(other)
+    draws = jax.vmap(other.sample_prior)(jax.random.split(jax.random.PRNGKey(9), 4000))
+    # sigma2 ~ IG(2, 2), whose median is 2 / (median of Gamma(2, 1)) = 2 / 1.678
+    np.testing.assert_allclose(np.median(draws["sigma2"]), 2.0 / 1.67834, rtol=0.1)
