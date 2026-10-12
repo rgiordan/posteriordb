@@ -32,12 +32,13 @@ x = pattern.flatten(params, to_free=True)
 params = pattern.fold(x, from_free=True)
 
 def objective(params): ...
-f = pg.FoldFunctionInput(objective, pattern, from_free=True)   # now a function of x
+f = pg.function_input_folded_to_free(objective, pattern)   # now a function of x
 jax.grad(f)(x)
 ```
 
 - Everything is pure JAX, so it works with `grad`, `jit` and `vmap`. A pattern acts on one value; use `jax.vmap` for batches.
 - The unconstraining transforms are Stan's, including the newer (>= 2.37) simplex transform and Stan's fill order for Cholesky factors. Free vectors and log Jacobians therefore match Stan's unconstrained space exactly. `posteriordb_jax/tests/test_paragami_matches_constraints.py` checks this against the BridgeStan-verified transforms.
+- Function wrappers change the representation a function takes or returns: `function_input_<from>_to_<to>` (for example `function_input_folded_to_free`, as above) and `function_output_<from>_to_<to>`.
 - Sizes and labels: `flat_length()`, `free_length()`, `flat_names()`, `free_names()`.
 - Validation: `pattern.validate_folded(value)` checks keys, shapes and constraint values. Value checks are skipped automatically under `jit`; shape checks are not.
 

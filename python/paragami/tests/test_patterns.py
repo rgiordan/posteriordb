@@ -115,16 +115,32 @@ def test_column_major_order():
 
 def test_function_wrappers():
     p = pg.PatternDict(mu=pg.NumericScalarPattern(), sigma=pg.NumericScalarPattern(lb=0.0))
+    y = jnp.array([1.0, 2.0])
+    folded = {"mu": 1.0, "sigma": 1.0}
+    u = jnp.array([1.0, 0.0])  # free: sigma = exp(0)
 
     def f(params, y):
         return jnp.sum((y - params["mu"]) ** 2) / params["sigma"]
 
-    g = pg.FoldFunctionInput(f, p, from_free=True, argnums=0)
-    u = jnp.array([1.0, 0.0])
-    assert g(u, jnp.array([1.0, 2.0])) == f({"mu": 1.0, "sigma": 1.0}, jnp.array([1.0, 2.0]))
-    assert jax.grad(g)(u, jnp.array([1.0, 2.0])).shape == (2,)
-    h = pg.FlattenFunctionInput(g, p, to_free=True, argnums=0)
-    assert h({"mu": 1.0, "sigma": 1.0}, jnp.array([1.0, 2.0])) == g(u, jnp.array([1.0, 2.0]))
+    g = pg.function_input_folded_to_free(f, p, argnums=0)
+    assert g(u, y) == f(folded, y)
+    assert jax.grad(g)(u, y).shape == (2,)
+    assert pg.function_input_free_to_folded(g, p)(folded, y) == g(u, y)
+    g_flat = pg.function_input_folded_to_flat(f, p)
+    assert g_flat(jnp.array([1.0, 1.0]), y) == f(folded, y)
+    assert pg.function_input_flat_to_folded(g_flat, p)(folded, y) == f(folded, y)
+    # Two arguments with their own patterns.
+    q = pg.NumericVectorPattern(2, lb=0.0)
+    h = pg.function_input_folded_to_free(f, [p, q], argnums=[0, 1])
+    np.testing.assert_allclose(h(u, jnp.log(y)), f(folded, y))
+
+    make = lambda x: {"mu": x, "sigma": jnp.exp(x)}
+    np.testing.assert_allclose(pg.function_output_folded_to_free(make, p)(0.5), [0.5, 0.5])
+    np.testing.assert_allclose(pg.function_output_folded_to_flat(make, p)(0.0), [0.0, 1.0])
+    back = pg.function_output_free_to_folded(pg.function_output_folded_to_free(make, p), p)(0.5)
+    np.testing.assert_allclose(back["sigma"], jnp.exp(0.5))
+    back = pg.function_output_flat_to_folded(pg.function_output_folded_to_flat(make, p), p)(0.5)
+    np.testing.assert_allclose(back["sigma"], jnp.exp(0.5))
 
 
 def test_empty_random_and_equality():

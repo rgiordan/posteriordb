@@ -10,11 +10,14 @@ A JAX rewrite of https://github.com/rgiordan/paragami (originally autograd).
 from .base import Pattern, ValidationError, is_concrete
 from .containers import PatternArray, PatternDict
 from .functions import (
-    FlattenFunctionInput,
-    FlattenFunctionOutput,
-    FoldFunctionInput,
-    FoldFunctionOutput,
-    TransformFunctionInput,
+    function_input_flat_to_folded,
+    function_input_folded_to_flat,
+    function_input_folded_to_free,
+    function_input_free_to_folded,
+    function_output_flat_to_folded,
+    function_output_folded_to_flat,
+    function_output_folded_to_free,
+    function_output_free_to_folded,
 )
 from .matrix import CholeskyCorrPattern, CholeskyCovPattern, PSDSymmetricMatrixPattern
 from .numeric import (
