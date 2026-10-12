@@ -446,10 +446,9 @@ def _from_prior_dists(prior_dists):
 
 
 def _draw(d, key):
-    try:
-        return d.sample(key)  # numpyro
-    except TypeError:
-        return d.sample(seed=key)  # tfp
+    if type(d).__module__.startswith("tensorflow_probability"):
+        return d.sample(seed=key)
+    return d.sample(key)  # numpyro and similar
 
 
 def _to_array(v):

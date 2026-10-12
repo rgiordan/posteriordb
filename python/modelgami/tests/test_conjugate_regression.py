@@ -186,3 +186,28 @@ def test_prior_dists_gives_density_and_sampler(setup):
     draws = jax.vmap(other.sample_prior)(jax.random.split(jax.random.PRNGKey(9), 4000))
     # sigma2 ~ IG(2, 2), whose median is 2 / (median of Gamma(2, 1)) = 2 / 1.678
     np.testing.assert_allclose(np.median(draws["sigma2"]), 2.0 / 1.67834, rtol=0.1)
+
+
+def test_dist_hooks_with_tfp(setup):
+    """The same hooks work with TFP distributions (needs a TFP-compatible JAX)."""
+    try:
+        from tensorflow_probability.substrates import jax as tfp
+    except Exception:  # not installed, or incompatible with this JAX version
+        pytest.skip("tensorflow_probability (JAX substrate) unavailable")
+    tfd = tfp.distributions
+    X, y, model = setup
+
+    def prior_dists(hyper):
+        return {
+            "sigma2": tfd.InverseGamma(hyper["a0"], hyper["b0"]),
+            "beta": lambda p: tfd.MultivariateNormalTriL(
+                hyper["m0"], jnp.linalg.cholesky(p["sigma2"] * hyper["V0"])),
+        }
+
+    def obs_dists_one(params, datum, hyper):
+        return {"y": tfd.Normal(datum["x"] @ params["beta"], jnp.sqrt(params["sigma2"]))}
+
+    other = mg.Model(params_pattern=model.params_pattern, data={"x": X, "y": y}, hyper=model.hyper,
+                     prior_dists=prior_dists, obs_dists_one=obs_dists_one)
+    assert_models_match(model, other)
+    check_model_contract(other)
