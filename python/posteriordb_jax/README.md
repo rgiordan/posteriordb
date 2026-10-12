@@ -14,7 +14,30 @@ verified for every constraint type actually used, per-model, against a live
 compiled Stan model via [BridgeStan](https://roualdes.us/bridgestan/) (see
 `testing.py`).
 
-## Status
+## New: the modelgami catalog (work in progress)
+
+The framework is being split into three packages that live side by side
+under `python/`:
+
+- [`paragami`](../paragami): JAX parameter folding/flattening with Stan-exact transforms (replaces `constraints.py`, `flatten.py`, `stan_bijectors.py`).
+- [`modelgami`](../modelgami): the common model interface (replaces `model.py`'s `StatisticalModel`).
+- `posteriordb_jax`: this package. It holds the posteriordb translations, now as `modelgami.Model`s in `posteriordb_jax/catalog/`.
+
+Converted so far (9 Stan models, 10 posteriors): `blr`, `eight_schools_centered`, `eight_schools_noncentered`, `kidscore_momiq`, `kilpisjarvi`, `logearn_height`, `low_dim_gauss_mix`, `normal_mixture` and `wells_dist`. The new versions use `jax.scipy.stats` instead of TFP, separate prior from likelihood, and use `log_lik_one` wherever the data are exchangeable. `tests/test_catalog.py` checks each one against BridgeStan and against the old translation. The other models still live in `posteriordb_jax/models/` until they are converted.
+
+```python
+from posteriordb_jax import catalog
+
+model = catalog.load("kidiq-kidscore_momiq")            # a modelgami.Model, data loaded
+f = model.log_density_fn("joint", params_as="free")       # Stan-exact log density
+catalog.list_models(exchangeable=True)                    # filter posteriors by capability
+draws = catalog.reference_draws("kidiq-kidscore_momiq")   # posteriordb's reference draws
+```
+
+Install for development (from `python/`): `pip install -e paragami -e modelgami -e posteriordb_jax`.
+The old TFP-based code needs `jax<=0.5` (TFP 0.25 breaks on newer JAX); paragami and modelgami work on current JAX.
+
+## Status (old-style models)
 
 96 of the 120 Stan models in this repo are converted so far
 (`posteriordb_jax/models/`, registered in `MODEL_REGISTRY`), each with a

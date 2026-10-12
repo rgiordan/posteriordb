@@ -1,0 +1,44 @@
+"""eight_schools_centered.stan:
+
+    parameters { vector[J] theta; real mu; real<lower=0> tau; }
+    model {
+      mu ~ normal(0, 5);
+      tau ~ cauchy(0, 5);
+      theta ~ normal(mu, tau);
+      y ~ normal(theta, sigma);
+    }
+"""
+
+import jax.numpy as jnp
+from jax.scipy import stats
+
+import modelgami as mg
+import paragami as pg
+
+STAN_MODEL = "eight_schools_centered"
+POSTERIORS = ["eight_schools-eight_schools_centered"]
+
+
+def log_prior(params, hyper):
+    return (stats.norm.logpdf(params["mu"], 0.0, 5.0)
+            + stats.cauchy.logpdf(params["tau"], 0.0, 5.0)
+            + jnp.sum(stats.norm.logpdf(params["theta"], params["mu"], params["tau"])))
+
+
+def log_lik(params, data, hyper):
+    return jnp.sum(stats.norm.logpdf(data["y"], params["theta"], data["sigma"]))
+
+
+def build(raw):
+    j = int(raw["J"])
+    return mg.Model(
+        name=STAN_MODEL,
+        params_pattern=pg.PatternDict(
+            theta=pg.NumericVectorPattern(j),
+            mu=pg.NumericScalarPattern(),
+            tau=pg.NumericScalarPattern(lb=0.0),
+        ),
+        data={"y": raw["y"], "sigma": raw["sigma"]},
+        log_prior=log_prior,
+        log_lik=log_lik,
+    )

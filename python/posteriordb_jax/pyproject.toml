@@ -12,6 +12,8 @@ dependencies = [
     "tensorflow-probability",
     "bridgestan",
     "numpy",
+    "paragami",
+    "modelgami",
 ]
 
 [project.optional-dependencies]
@@ -19,3 +21,6 @@ test = ["pytest"]
 
 [tool.setuptools.packages.find]
 include = ["posteriordb_jax*"]
+
+[tool.pytest.ini_options]
+markers = ["stan: compiles a Stan model with BridgeStan (slow; deselect with -m 'not stan')"]

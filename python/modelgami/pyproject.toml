@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "modelgami"
+version = "0.1.0.dev0"
+description = "A common, JAX-based interface for statistical models: write the log prior and likelihood once, get the rest generated."
+requires-python = ">=3.10"
+dependencies = ["jax", "numpy", "paragami"]
+
+[project.optional-dependencies]
+arviz = ["arviz"]
+test = ["pytest", "arviz"]
+
+[tool.setuptools.packages.find]
+include = ["modelgami*"]

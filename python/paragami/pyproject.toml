@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paragami"
+version = "1.0.0.dev0"
+description = "Parameter origami in JAX: fold and flatten structured, constrained parameters to and from (unconstrained) vectors."
+requires-python = ">=3.10"
+dependencies = ["jax", "numpy"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+include = ["paragami*"]
