@@ -11,7 +11,8 @@ dependencies = ["jax", "numpy", "paragami"]
 
 [project.optional-dependencies]
 arviz = ["arviz"]
-test = ["pytest", "arviz"]
+numpyro = ["numpyro"]
+test = ["pytest", "arviz", "numpyro"]
 
 [tool.setuptools.packages.find]
 include = ["modelgami*"]

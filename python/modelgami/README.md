@@ -31,6 +31,16 @@ model = mg.Model(
 
 Optional hooks: `sample_prior(key, hyper)`, `sample_one(key, params, datum, hyper)` (or `sample_data` for non-exchangeable data), `log_lik_pointwise` (a vectorized alternative to `log_lik_one`), and `check_params` / `check_data` for extra validation. The same model can also be written as a subclass of `mg.Model`, with these as methods and `params_pattern` as a method or attribute. See [`examples/conjugate_regression.py`](modelgami/examples/conjugate_regression.py) for both styles.
 
+### One program for simulation and density (NumPyro)
+
+Probabilistic programming languages specify a model once and use the same program both to simulate and to evaluate the log density. `mg.from_numpyro(program, data, hyper, exchangeable=True)` turns a NumPyro program `program(data, hyper)` into a `Model`:
+
+- Latent sites become the parameters, with a paragami pattern built from their supports, so the unconstrained space uses Stan's transforms.
+- Latent sites make up the prior, and observed sites make up the likelihood. With `exchangeable=True`, a plate over observations gives the pointwise likelihood.
+- Running the program forward gives `sample_prior` and `sample_data`.
+
+The hand-written hooks remain the interface methods rely on; the adapter just generates them. See `tests/test_numpyro_adapter.py`, which checks it against the hand-written conjugate regression.
+
 Data shared across observations (sizes, design constants) go in `shared_data=`. `log_lik_one` sees them as part of `datum`.
 
 ## What you get
