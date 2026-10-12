@@ -39,7 +39,7 @@ def test_matches_old_translation(name):
     old = MODEL_REGISTRY[mod.STAN_MODEL](data)
     f = model.log_density_fn("joint", params_as="free")
     for k in jax.random.split(jax.random.PRNGKey(0), 5):
-        x = jax.random.normal(k, (model.free_dim,))
+        x = jax.random.normal(k, (model.params_pattern.free_length(),))
         np.testing.assert_allclose(f(x), old.log_prob_unconstrained(x), rtol=1e-8, atol=1e-6)
         np.testing.assert_allclose(jax.grad(f)(x), old.grad_unconstrained(x), rtol=1e-9, atol=1e-8)
 

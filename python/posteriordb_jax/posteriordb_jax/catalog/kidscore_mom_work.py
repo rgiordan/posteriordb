@@ -11,7 +11,7 @@ STAN_MODEL = "kidscore_mom_work"
 POSTERIORS = ['kidiq_with_mom_work-kidscore_mom_work']
 
 
-def features(d):
+def features(d, hyper):
     return ones_and(*(jnp.asarray(d["mom_work"] == k, dtype=jnp.float64) for k in (2, 3, 4)))
 
 
@@ -26,6 +26,5 @@ def build(raw):
         n_features=4,
         features=features,
         response=response,
-        log_prior=None,
         response_field="kid_score",
     )

@@ -8,7 +8,7 @@
     model { log_earn ~ normal(beta[1] + beta[2] * z_height + beta[3] * male + beta[4] * inter, sigma); }
 
 The standardization uses the whole data set (Stan's transformed data), so
-the mean and sd are computed once here and passed as shared data. Subsets
+the mean and sd are computed once here and passed as hyperparameters. Subsets
 and reweighting keep the full-data standardization.
 """
 
@@ -21,8 +21,8 @@ STAN_MODEL = "logearn_interaction_z"
 POSTERIORS = ["earnings-logearn_interaction_z"]
 
 
-def features(d):
-    z = (d["height"] - d["height_mean"]) / d["height_sd"]
+def features(d, hyper):
+    z = (d["height"] - hyper["height_mean"]) / hyper["height_sd"]
     return ones_and(z, d["male"], z * d["male"])
 
 
@@ -31,7 +31,7 @@ def build(raw):
     return normal_regression(
         name=STAN_MODEL,
         data={"earn": raw["earn"], "height": raw["height"], "male": raw["male"]},
-        shared_data={"height_mean": float(height.mean()), "height_sd": float(height.std(ddof=1))},
+        hyper={"height_mean": float(height.mean()), "height_sd": float(height.std(ddof=1))},
         n_features=4,
         features=features,
         response=lambda d: jnp.log(d["earn"]),

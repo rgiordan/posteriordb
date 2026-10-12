@@ -12,7 +12,7 @@ STAN_MODEL = "logmesquite"
 POSTERIORS = ["mesquite-logmesquite"]
 
 
-def features(d):
+def features(d, hyper):
     return ones_and(
         jnp.log(d["diam1"]),
         jnp.log(d["diam2"]),

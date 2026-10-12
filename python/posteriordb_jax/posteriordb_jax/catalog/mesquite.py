@@ -9,7 +9,7 @@ STAN_MODEL = "mesquite"
 POSTERIORS = ['mesquite-mesquite']
 
 
-def features(d):
+def features(d, hyper):
     return ones_and(d["diam1"], d["diam2"], d["canopy_height"], d["total_height"], d["density"], d["group"])
 
 
@@ -24,6 +24,5 @@ def build(raw):
         n_features=7,
         features=features,
         response=response,
-        log_prior=None,
         response_field="weight",
     )

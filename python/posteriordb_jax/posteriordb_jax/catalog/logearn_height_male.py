@@ -11,7 +11,7 @@ STAN_MODEL = "logearn_height_male"
 POSTERIORS = ['earnings-logearn_height_male']
 
 
-def features(d):
+def features(d, hyper):
     return ones_and(d["height"], d["male"])
 
 
@@ -26,7 +26,6 @@ def build(raw):
         n_features=3,
         features=features,
         response=response,
-        log_prior=None,
         response_field="earn",
         inverse_response=jnp.exp,
     )

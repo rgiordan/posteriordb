@@ -9,7 +9,7 @@ STAN_MODEL = "kidscore_interaction"
 POSTERIORS = ['kidiq-kidscore_interaction']
 
 
-def features(d):
+def features(d, hyper):
     return ones_and(d["mom_hs"], d["mom_iq"], d["mom_hs"] * d["mom_iq"])
 
 

@@ -13,7 +13,7 @@ STAN_MODEL = "wells_dist100_model"
 POSTERIORS = ["wells_data-wells_dist100_model"]
 
 
-def features(d):
+def features(d, hyper):
     return jnp.stack([d["dist"] / 100.0])
 
 

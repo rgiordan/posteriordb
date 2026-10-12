@@ -11,7 +11,7 @@ STAN_MODEL = "logmesquite_logvolume"
 POSTERIORS = ['mesquite-logmesquite_logvolume']
 
 
-def features(d):
+def features(d, hyper):
     return ones_and(jnp.log(d["diam1"] * d["diam2"] * d["canopy_height"]))
 
 
@@ -26,7 +26,6 @@ def build(raw):
         n_features=2,
         features=features,
         response=response,
-        log_prior=None,
         response_field="weight",
         inverse_response=jnp.exp,
     )

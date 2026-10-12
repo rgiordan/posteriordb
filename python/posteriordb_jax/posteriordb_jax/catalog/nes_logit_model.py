@@ -13,7 +13,7 @@ STAN_MODEL = "nes_logit_model"
 POSTERIORS = ["nes_logit_data-nes_logit_model"]
 
 
-def features(d):
+def features(d, hyper):
     return jnp.stack([d["income"]])
 
 

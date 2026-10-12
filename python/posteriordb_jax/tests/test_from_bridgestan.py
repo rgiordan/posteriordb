@@ -24,11 +24,12 @@ def pair():
 
 def test_density_and_gradient_match(pair):
     jax_model, stan_model, _ = pair
-    assert stan_model.free_dim == jax_model.free_dim
+    free_length = stan_model.params_pattern.free_length()
+    assert free_length == jax_model.params_pattern.free_length()
     assert_models_match(jax_model, stan_model, rtol=1e-10, atol=1e-10)
     f = jax.jit(stan_model.log_density_fn("joint", params_as="free", jacobian=False))
     g = jax_model.log_density_fn("joint", params_as="free", jacobian=False)
-    x = jnp.linspace(-1, 1, stan_model.free_dim)
+    x = jnp.linspace(-1, 1, free_length)
     np.testing.assert_allclose(f(x), g(x), rtol=1e-10)
     np.testing.assert_allclose(jax.grad(f)(x), jax.grad(g)(x), rtol=1e-9)
 
@@ -36,24 +37,26 @@ def test_density_and_gradient_match(pair):
 def test_hessian_and_vmap(pair):
     jax_model, stan_model, _ = pair
     f, g = stan_model.log_density_fn(), jax_model.log_density_fn()
-    x = 0.3 * jnp.ones(stan_model.free_dim)
+    free_length = stan_model.params_pattern.free_length()
+    x = 0.3 * jnp.ones(free_length)
     np.testing.assert_allclose(jax.hessian(f)(x), jax.hessian(g)(x), rtol=1e-5, atol=1e-5)
-    v = jnp.arange(stan_model.free_dim, dtype=float)
+    v = jnp.arange(free_length, dtype=float)
     np.testing.assert_allclose(mg.hvp(f)(x, v), mg.hvp(g)(x, v), rtol=1e-5, atol=1e-5)
-    xs = jax.random.normal(jax.random.PRNGKey(0), (4, stan_model.free_dim))
+    xs = jax.random.normal(jax.random.PRNGKey(0), (4, free_length))
     np.testing.assert_allclose(jax.vmap(f)(xs), jax.vmap(g)(xs), rtol=1e-10)
 
 
-def test_fold_flatten_and_with_data(pair):
+def test_fold_flatten_and_new_data(pair):
     jax_model, stan_model, raw = pair
-    x = jax.random.normal(jax.random.PRNGKey(1), (stan_model.free_dim,))
-    p = stan_model.fold_params(x, from_free=True)
-    q = jax_model.fold_params(x, from_free=True)
+    x = jax.random.normal(jax.random.PRNGKey(1), (stan_model.params_pattern.free_length(),))
+    p = stan_model.params_pattern.free_to_folded(x)
+    q = jax_model.params_pattern.free_to_folded(x)
     for k in q:
         np.testing.assert_allclose(p[k], q[k], rtol=1e-12)
-    np.testing.assert_allclose(stan_model.flatten_params(p, to_free=True), x, rtol=1e-10)
+    np.testing.assert_allclose(stan_model.params_pattern.folded_to_free(p), x, rtol=1e-10)
     new = {**raw, "y": [v + 1.0 for v in raw["y"]]}
-    s2, j2 = stan_model.with_data(new), jax_model.with_data({"y": new["y"], "sigma": raw["sigma"]})
-    np.testing.assert_allclose(s2.log_density_fn()(x), j2.log_density_fn()(x), rtol=1e-10)
+    stan_new = mg.from_bridgestan(stan_model.bridgestan.lib_path, new)
+    jax_new_data = {"y": jnp.asarray(new["y"]), "sigma": jnp.asarray(raw["sigma"])}
+    np.testing.assert_allclose(stan_new.log_density_fn()(x), jax_model.log_density_fn()(x, data=jax_new_data), rtol=1e-10)
     with pytest.raises(NotImplementedError):
         stan_model.log_density_fn("lik")

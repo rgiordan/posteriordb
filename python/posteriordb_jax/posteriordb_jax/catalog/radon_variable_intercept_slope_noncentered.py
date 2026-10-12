@@ -85,7 +85,7 @@ def sample_one(key, params, datum, hyper):
 
 def build(raw):
     j = int(raw["J"])
-    return mg.Model(
+    return mg.ExchangeableModel(
         name=STAN_MODEL,
         params_pattern=pg.PatternDict(
             sigma_y=pg.NumericScalarPattern(lb=0.0),
@@ -101,7 +101,6 @@ def build(raw):
             "floor_measure": raw["floor_measure"],
             "log_radon": raw["log_radon"],
         },
-        log_prior=log_prior,
-        log_lik_one=log_lik_one,
-        sample_one=sample_one,
+        prior=mg.DGP(log_density=log_prior),
+        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
     )

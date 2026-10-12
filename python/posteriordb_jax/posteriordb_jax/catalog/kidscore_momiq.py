@@ -35,11 +35,10 @@ def sample_one(key, params, datum, hyper):
 
 
 def build(raw):
-    return mg.Model(
+    return mg.ExchangeableModel(
         name=STAN_MODEL,
         params_pattern=pg.PatternDict(beta=pg.NumericVectorPattern(2), sigma=pg.NumericScalarPattern(lb=0.0)),
         data={"kid_score": raw["kid_score"], "mom_iq": raw["mom_iq"]},
-        log_prior=log_prior,
-        log_lik_one=log_lik_one,
-        sample_one=sample_one,
+        prior=mg.DGP(log_density=log_prior),
+        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
     )

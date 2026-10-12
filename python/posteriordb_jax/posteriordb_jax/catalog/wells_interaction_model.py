@@ -17,7 +17,7 @@ STAN_MODEL = "wells_interaction_model"
 POSTERIORS = ["wells_data-wells_interaction_model"]
 
 
-def features(d):
+def features(d, hyper):
     dist100 = d["dist"] / 100.0
     return jnp.stack([dist100, d["arsenic"], dist100 * d["arsenic"]])
 

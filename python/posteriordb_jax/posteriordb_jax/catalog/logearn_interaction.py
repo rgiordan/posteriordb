@@ -11,7 +11,7 @@ STAN_MODEL = "logearn_interaction"
 POSTERIORS = ["earnings-logearn_interaction"]
 
 
-def features(d):
+def features(d, hyper):
     return ones_and(d["height"], d["male"], d["height"] * d["male"])
 
 

@@ -178,8 +178,9 @@ def assert_model_matches_stan(
     Errors are *scaled*: |jax - stan| / (1 + |stan|), elementwise, so one
     set of tolerances works for models with large data magnitudes or N
     (where absolute float64 noise grows with the size of the quantity)."""
-    assert harness.param_unc_num() == model.free_dim, (
-        f"free dim mismatch: Stan={harness.param_unc_num()} vs model={model.free_dim}"
+    free_length = model.params_pattern.free_length()
+    assert harness.param_unc_num() == free_length, (
+        f"free dim mismatch: Stan={harness.param_unc_num()} vs model={free_length}"
     )
     f = jax.jit(model.log_density_fn("joint", params_as="free"))
     grad = jax.jit(jax.grad(f))
@@ -196,7 +197,7 @@ def assert_model_matches_stan(
         x_np = rng.normal(scale=scale, size=harness.param_unc_num())
         x = jnp.asarray(x_np)
         c_stan = harness.param_constrain(x_np)
-        c_jax = values_by_names(model.fold_params(x, from_free=True), names)
+        c_jax = values_by_names(model.params_pattern.free_to_folded(x), names)
         report.max_abs_err_constrained_flat = max(report.max_abs_err_constrained_flat, err(c_jax, c_stan))
         lp_stan, grad_stan = harness.log_density_gradient(x_np, propto=False, jacobian=True)
         report.max_abs_err_log_density = max(report.max_abs_err_log_density, err(f(x), lp_stan))

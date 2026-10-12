@@ -8,7 +8,7 @@
     model { kid_score ~ normal(beta[1] + beta[2] * c_mom_hs + beta[3] * c_mom_iq + beta[4] * inter, sigma); }
 
 The centering uses the whole data set (Stan's transformed data), so the means
-are computed once here and passed as shared data. Subsets and reweighting
+are computed once here and passed as hyperparameters. Subsets and reweighting
 keep the full-data centering.
 """
 
@@ -20,9 +20,9 @@ STAN_MODEL = "kidscore_interaction_c"
 POSTERIORS = ["kidiq_with_mom_work-kidscore_interaction_c"]
 
 
-def features(d):
-    hs = d["mom_hs"] - d["mom_hs_mean"]
-    iq = d["mom_iq"] - d["mom_iq_mean"]
+def features(d, hyper):
+    hs = d["mom_hs"] - hyper["mom_hs_mean"]
+    iq = d["mom_iq"] - hyper["mom_iq_mean"]
     return ones_and(hs, iq, hs * iq)
 
 
@@ -30,7 +30,7 @@ def build(raw):
     return normal_regression(
         name=STAN_MODEL,
         data={"kid_score": raw["kid_score"], "mom_hs": raw["mom_hs"], "mom_iq": raw["mom_iq"]},
-        shared_data={
+        hyper={
             "mom_hs_mean": float(np.mean(raw["mom_hs"])),
             "mom_iq_mean": float(np.mean(raw["mom_iq"])),
         },

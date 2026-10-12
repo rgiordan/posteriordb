@@ -8,7 +8,7 @@
     model { kid_score ~ normal(beta[1] + beta[2] * z_mom_hs + beta[3] * z_mom_iq + beta[4] * inter, sigma); }
 
 The standardization uses the whole data set (Stan's transformed data), so the
-means and sds are computed once here and passed as shared data. Subsets and
+means and sds are computed once here and passed as hyperparameters. Subsets and
 reweighting keep the full-data standardization.
 """
 
@@ -20,9 +20,9 @@ STAN_MODEL = "kidscore_interaction_z"
 POSTERIORS = ["kidiq_with_mom_work-kidscore_interaction_z"]
 
 
-def features(d):
-    hs = (d["mom_hs"] - d["mom_hs_mean"]) / (2.0 * d["mom_hs_sd"])
-    iq = (d["mom_iq"] - d["mom_iq_mean"]) / (2.0 * d["mom_iq_sd"])
+def features(d, hyper):
+    hs = (d["mom_hs"] - hyper["mom_hs_mean"]) / (2.0 * hyper["mom_hs_sd"])
+    iq = (d["mom_iq"] - hyper["mom_iq_mean"]) / (2.0 * hyper["mom_iq_sd"])
     return ones_and(hs, iq, hs * iq)
 
 
@@ -32,7 +32,7 @@ def build(raw):
     return normal_regression(
         name=STAN_MODEL,
         data={"kid_score": raw["kid_score"], "mom_hs": raw["mom_hs"], "mom_iq": raw["mom_iq"]},
-        shared_data={
+        hyper={
             "mom_hs_mean": float(hs.mean()),
             "mom_hs_sd": float(hs.std(ddof=1)),
             "mom_iq_mean": float(iq.mean()),

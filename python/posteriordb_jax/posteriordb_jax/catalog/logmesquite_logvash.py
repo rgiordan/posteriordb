@@ -12,7 +12,7 @@ STAN_MODEL = "logmesquite_logvash"
 POSTERIORS = ["mesquite-logmesquite_logvash"]
 
 
-def features(d):
+def features(d, hyper):
     return ones_and(
         jnp.log(d["diam1"] * d["diam2"] * d["canopy_height"]),
         jnp.log(d["diam1"] * d["diam2"]),

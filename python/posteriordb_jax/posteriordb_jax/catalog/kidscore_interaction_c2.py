@@ -14,7 +14,7 @@ STAN_MODEL = "kidscore_interaction_c2"
 POSTERIORS = ["kidiq_with_mom_work-kidscore_interaction_c2"]
 
 
-def features(d):
+def features(d, hyper):
     hs = d["mom_hs"] - 0.5
     iq = d["mom_iq"] - 100.0
     return ones_and(hs, iq, hs * iq)

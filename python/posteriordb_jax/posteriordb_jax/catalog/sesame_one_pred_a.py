@@ -9,7 +9,7 @@ STAN_MODEL = "sesame_one_pred_a"
 POSTERIORS = ["sesame_data-sesame_one_pred_a"]
 
 
-def features(d):
+def features(d, hyper):
     return ones_and(d["encouraged"])
 
 

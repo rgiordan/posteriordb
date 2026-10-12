@@ -28,10 +28,9 @@ def sample_one(key, params, datum, hyper):
 
 
 def build(raw):
-    return mg.Model(
+    return mg.ExchangeableModel(
         name=STAN_MODEL,
         params_pattern=pg.PatternDict(beta=pg.NumericVectorPattern(2)),
         data={"switched": jnp.asarray(raw["switched"], dtype=jnp.int32), "dist": raw["dist"]},
-        log_lik_one=log_lik_one,
-        sample_one=sample_one,
+        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
     )

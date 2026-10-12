@@ -18,7 +18,7 @@ POSTERIORS = [f"nes{year}-nes" for year in range(1972, 2001, 4)]
 FIELDS = ["partyid7", "real_ideo", "race_adj", "educ1", "gender", "income", "age_discrete"]
 
 
-def features(d):
+def features(d, hyper):
     age = d["age_discrete"]
     return ones_and(
         d["real_ideo"],

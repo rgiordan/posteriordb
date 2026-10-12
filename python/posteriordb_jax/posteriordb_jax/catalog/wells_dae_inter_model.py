@@ -13,7 +13,7 @@
     model { switched ~ bernoulli_logit_glm(x, alpha, beta); }
 
 The centering uses the whole data set (Stan's transformed data), so the means
-are computed once here and passed as shared data. Subsets and reweighting
+are computed once here and passed as hyperparameters. Subsets and reweighting
 keep the full-data centering.
 """
 
@@ -26,10 +26,10 @@ STAN_MODEL = "wells_dae_inter_model"
 POSTERIORS = ["wells_data-wells_dae_inter_model"]
 
 
-def features(d):
-    c_dist100 = (d["dist"] - d["dist_mean"]) / 100.0
-    c_arsenic = d["arsenic"] - d["arsenic_mean"]
-    c_educ4 = (d["educ"] - d["educ_mean"]) / 4.0
+def features(d, hyper):
+    c_dist100 = (d["dist"] - hyper["dist_mean"]) / 100.0
+    c_arsenic = d["arsenic"] - hyper["arsenic_mean"]
+    c_educ4 = (d["educ"] - hyper["educ_mean"]) / 4.0
     return jnp.stack([c_dist100, c_arsenic, c_educ4, c_dist100 * c_arsenic, c_dist100 * c_educ4, c_arsenic * c_educ4])
 
 
@@ -37,7 +37,7 @@ def build(raw):
     return logistic_regression(
         name=STAN_MODEL,
         data={"switched": raw["switched"], "dist": raw["dist"], "arsenic": raw["arsenic"], "educ": raw["educ"]},
-        shared_data={"dist_mean": float(np.mean(raw["dist"])), "arsenic_mean": float(np.mean(raw["arsenic"])), "educ_mean": float(np.mean(raw["educ"]))},
+        hyper={"dist_mean": float(np.mean(raw["dist"])), "arsenic_mean": float(np.mean(raw["arsenic"])), "educ_mean": float(np.mean(raw["educ"]))},
         n_features=6,
         features=features,
         response_field="switched",

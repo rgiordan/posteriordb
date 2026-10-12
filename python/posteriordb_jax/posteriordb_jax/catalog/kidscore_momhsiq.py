@@ -9,7 +9,7 @@ STAN_MODEL = "kidscore_momhsiq"
 POSTERIORS = ["kidiq-kidscore_momhsiq"]
 
 
-def features(d):
+def features(d, hyper):
     return ones_and(d["mom_hs"], d["mom_iq"])
 
 

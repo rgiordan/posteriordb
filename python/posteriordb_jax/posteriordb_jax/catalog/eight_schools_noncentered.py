@@ -43,6 +43,6 @@ def build(raw):
             tau=pg.NumericScalarPattern(lb=0.0),
         ),
         data={"y": raw["y"], "sigma": raw["sigma"]},
-        log_prior=log_prior,
-        log_lik=log_lik,
+        prior=mg.DGP(log_density=log_prior),
+        likelihood=mg.DGP(log_density=log_lik),
     )

@@ -51,7 +51,7 @@ def sample_one(key, params, datum, hyper):
 
 def build(raw):
     j = int(raw["J"])
-    return mg.Model(
+    return mg.ExchangeableModel(
         name=STAN_MODEL,
         params_pattern=pg.PatternDict(
             a=pg.NumericVectorPattern(j),
@@ -63,7 +63,6 @@ def build(raw):
             "county": jnp.asarray(raw["county"], dtype=jnp.int32),
             "y": raw["y"],
         },
-        log_prior=log_prior,
-        log_lik_one=log_lik_one,
-        sample_one=sample_one,
+        prior=mg.DGP(log_density=log_prior),
+        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
     )

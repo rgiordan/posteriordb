@@ -21,9 +21,9 @@ def log_lik_one(params, datum, hyper):
 
 
 def build(raw):
-    return mg.Model(
+    return mg.ExchangeableModel(
         name=STAN_MODEL,
         params_pattern=pg.PatternDict(beta=pg.NumericVectorPattern(2), sigma=pg.NumericScalarPattern(lb=0.0)),
         data={"earn": raw["earn"], "height": raw["height"]},
-        log_lik_one=log_lik_one,
+        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one),
     )

@@ -10,7 +10,7 @@
     model { switched ~ bernoulli_logit_glm(x, alpha, beta); }
 
 The centering uses the whole data set (Stan's transformed data), so the means
-are computed once here and passed as shared data. Subsets and reweighting
+are computed once here and passed as hyperparameters. Subsets and reweighting
 keep the full-data centering.
 """
 
@@ -23,9 +23,9 @@ STAN_MODEL = "wells_interaction_c_model"
 POSTERIORS = ["wells_data-wells_interaction_c_model"]
 
 
-def features(d):
-    c_dist100 = (d["dist"] - d["dist_mean"]) / 100.0
-    c_arsenic = d["arsenic"] - d["arsenic_mean"]
+def features(d, hyper):
+    c_dist100 = (d["dist"] - hyper["dist_mean"]) / 100.0
+    c_arsenic = d["arsenic"] - hyper["arsenic_mean"]
     return jnp.stack([c_dist100, c_arsenic, c_dist100 * c_arsenic])
 
 
@@ -33,7 +33,7 @@ def build(raw):
     return logistic_regression(
         name=STAN_MODEL,
         data={"switched": raw["switched"], "dist": raw["dist"], "arsenic": raw["arsenic"]},
-        shared_data={"dist_mean": float(np.mean(raw["dist"])), "arsenic_mean": float(np.mean(raw["arsenic"]))},
+        hyper={"dist_mean": float(np.mean(raw["dist"])), "arsenic_mean": float(np.mean(raw["arsenic"]))},
         n_features=3,
         features=features,
         response_field="switched",

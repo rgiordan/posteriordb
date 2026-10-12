@@ -17,7 +17,7 @@ STAN_MODEL = "wells_dae_model"
 POSTERIORS = ["wells_data-wells_dae_model"]
 
 
-def features(d):
+def features(d, hyper):
     return jnp.stack([d["dist"] / 100.0, d["arsenic"], d["educ"] / 4.0])
 
 

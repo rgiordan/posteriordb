@@ -14,7 +14,11 @@ models move here as they are converted.
 from __future__ import annotations
 
 import importlib
-from typing import Dict, List
+from typing import Dict, List, Optional
+
+import jax.numpy as jnp
+
+import modelgami as mg
 
 from ..io import load_data, load_posterior_info, load_reference_draws
 from ..stan_names import folded_draws_from_posteriordb
@@ -93,26 +97,24 @@ def module_for(posterior_name: str):
 
 def load(posterior_name: str):
     """The `modelgami.Model` for a posteriordb posterior (e.g.
-    "eight_schools-eight_schools_noncentered"), with its data loaded."""
+    "eight_schools-eight_schools_noncentered"), with its data loaded. Data
+    lists become float64 arrays; each module casts its integer fields."""
     mod = module_for(posterior_name)
     info = load_posterior_info(posterior_name)
-    model = mod.build(load_data(info["data_name"]))
+    raw = {k: (jnp.asarray(v, dtype=jnp.float64) if isinstance(v, list) else v)
+           for k, v in load_data(info["data_name"]).items()}
+    model = mod.build(raw)
     model.name = posterior_name
     return model
 
 
-def list_models(**filters) -> List[str]:
-    """Posterior names whose `Model.capabilities` match every filter, e.g.
-    `list_models(exchangeable=True, has_prior=True)`."""
+def list_models(exchangeable: Optional[bool] = None) -> List[str]:
+    """Posterior names, optionally only those whose model is (or is not) a
+    `modelgami.ExchangeableModel`."""
     names = sorted(_registry())
-    if not filters:
+    if exchangeable is None:
         return names
-    out = []
-    for name in names:
-        caps = load(name).capabilities
-        if all(caps.get(k) == v for k, v in filters.items()):
-            out.append(name)
-    return out
+    return [name for name in names if isinstance(load(name), mg.ExchangeableModel) == exchangeable]
 
 
 def reference_draws(posterior_name: str, as_arviz: bool = False):

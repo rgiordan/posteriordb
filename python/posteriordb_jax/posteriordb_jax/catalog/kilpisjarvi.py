@@ -30,7 +30,7 @@ def log_lik_one(params, datum, hyper):
 
 
 def build(raw):
-    return mg.Model(
+    return mg.ExchangeableModel(
         name=STAN_MODEL,
         params_pattern=pg.PatternDict(
             alpha=pg.NumericScalarPattern(),
@@ -39,6 +39,6 @@ def build(raw):
         ),
         data={"x": raw["x"], "y": raw["y"]},
         hyper={k: float(raw[k]) for k in ("pmualpha", "psalpha", "pmubeta", "psbeta")},
-        log_prior=log_prior,
-        log_lik_one=log_lik_one,
+        prior=mg.DGP(log_density=log_prior),
+        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one),
     )
