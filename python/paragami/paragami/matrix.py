@@ -32,15 +32,15 @@ class _SquareMatrixPattern(Pattern):
     def as_dict(self):
         return {"size": self.size}
 
-    def _fold_flat(self, flat_val):
+    def _flat_to_folded(self, flat_val):
         return jnp.reshape(flat_val, self.shape)
 
-    def _flatten_flat(self, folded_val):
+    def _folded_to_flat(self, folded_val):
         return jnp.reshape(jnp.asarray(folded_val), (-1,))
 
-    def flat_names(self, free=None):
-        if self._free(free):
-            return super().flat_names(free)
+    def _names(self, free):
+        if free:
+            return super()._names(free)
         return [f"[{i},{j}]" for i, j in np.ndindex(*self.shape)]
 
 
@@ -50,14 +50,14 @@ class CholeskyCovPattern(_SquareMatrixPattern):
         self._rows, self._cols = np.tril_indices(self.size)
         self._diag_pos = np.where(self._rows == self._cols)[0]
 
-    def _fold_free(self, u):
+    def _free_to_folded(self, u):
         k = self.size
         mat = jnp.zeros((k, k), dtype=u.dtype).at[self._rows, self._cols].set(u)
         d = np.arange(k)
         mat = mat.at[d, d].set(jnp.exp(mat[d, d]))
         return mat, jnp.sum(u[self._diag_pos])
 
-    def _flatten_free(self, mat):
+    def _folded_to_free(self, mat):
         flat = jnp.asarray(mat)[self._rows, self._cols]
         return flat.at[self._diag_pos].set(jnp.log(flat[self._diag_pos]))
 
@@ -78,16 +78,16 @@ class PSDSymmetricMatrixPattern(_SquareMatrixPattern):
         super().__init__(size, size * (size + 1) // 2, free_default)
         self._chol = CholeskyCovPattern(size)
 
-    def _fold_free(self, u):
-        l, logdet = self._chol._fold_free(u)
+    def _free_to_folded(self, u):
+        l, logdet = self._chol._free_to_folded(u)
         k = self.size
         # log|d(LL^T)/dL| = K log 2 + sum_i (K - i) log L_ii   (i = 0..K-1)
         weights = jnp.arange(k, 0, -1, dtype=u.dtype)
         logdet = logdet + k * math.log(2.0) + jnp.sum(weights * jnp.log(jnp.diag(l)))
         return l @ l.T, logdet
 
-    def _flatten_free(self, mat):
-        return self._chol._flatten_free(jnp.linalg.cholesky(jnp.asarray(mat)))
+    def _folded_to_free(self, mat):
+        return self._chol._folded_to_free(jnp.linalg.cholesky(jnp.asarray(mat)))
 
     def _validate(self, x, validate_value):
         msg = check_shape(x, self.shape)
@@ -105,7 +105,7 @@ class CholeskyCorrPattern(_SquareMatrixPattern):
     def __init__(self, size: int, free_default: Optional[bool] = None):
         super().__init__(size, size * (size - 1) // 2, free_default)
 
-    def _fold_free(self, u):
+    def _free_to_folded(self, u):
         k = self.size
         z = jnp.tanh(u)
         mat = jnp.zeros((k, k), dtype=u.dtype)
@@ -121,7 +121,7 @@ class CholeskyCorrPattern(_SquareMatrixPattern):
             mat = mat.at[i, i].set(jnp.sqrt(remaining))
         return mat, logdet
 
-    def _flatten_free(self, mat):
+    def _folded_to_free(self, mat):
         mat = jnp.asarray(mat)
         out = []
         for i in range(self.size):

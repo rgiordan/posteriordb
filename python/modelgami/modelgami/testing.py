@@ -21,10 +21,10 @@ def check_model_contract(model, key=None, n_draws: int = 3, rtol: float = 1e-8, 
     lik_free = model.log_density_fn("lik", params_as="free")
     for k in jax.random.split(key, n_draws):
         x = 0.5 * jax.random.normal(k, (model.free_dim,))
-        params, logdet = pattern.fold_with_log_det(x)
+        params, logdet = pattern.free_to_folded_with_log_det(x)
         model.validate_params(params)
         np.testing.assert_allclose(model.flatten_params(params), x, rtol=1e-6, atol=1e-8)
-        y = model.flatten_params(params, free=False)
+        y = model.flatten_params(params, to_free=False)
         lp = joint_folded(params)
         _close(joint_flat(y), lp, rtol, atol, "flat vs folded joint")
         _close(joint_free(x), lp + logdet, rtol, atol, "free joint vs folded joint + log det")
@@ -41,7 +41,7 @@ def check_model_contract(model, key=None, n_draws: int = 3, rtol: float = 1e-8, 
             _close(gw, pw, rtol, atol, "d lik / d weights == pointwise")
         if model.data_pattern is not None:
             d_flat = model.data_pattern.flatten(
-                {k: model.data[k] for k in model.data_pattern.keys()}, free=False)
+                {k: model.data[k] for k in model.data_pattern.keys()}, to_free=False)
             _close(model.log_density_fn("joint", "free", data_as="flat")(x, d_flat), joint_free(x),
                    rtol, atol, "flat data")
     if model.capabilities["can_sample_prior"]:

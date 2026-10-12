@@ -172,7 +172,7 @@ class Model:
             return d
         if self.data_pattern is None:
             raise ValueError(f"data_as={data_as!r} needs a data_pattern")
-        folded = self.data_pattern.fold(d, free=(data_as == "free"), validate_value=False)
+        folded = self.data_pattern.fold(d, from_free=(data_as == "free"), validate_value=False)
         return {**self.data, **folded} if isinstance(self.data, dict) else folded
 
     # -- hooks with defaults -------------------------------------------------------
@@ -278,9 +278,9 @@ class Model:
             hyper = self._h(hyper)
             logdet = 0.0
             if params_as == "free":
-                params, logdet = pattern.fold_with_log_det(p)
+                params, logdet = pattern.free_to_folded_with_log_det(p)
             elif params_as == "flat":
-                params = pattern.fold(p, free=False, validate_value=False)
+                params = pattern.fold(p, from_free=False, validate_value=False)
             else:
                 params = p
             d = self.data if data is None else self._fold_data(data, data_as)
@@ -331,17 +331,19 @@ class Model:
 
     @property
     def free_dim(self) -> int:
-        return self.params_pattern.flat_length(True)
+        return self.params_pattern.free_length()
 
     @property
     def flat_dim(self) -> int:
-        return self.params_pattern.flat_length(False)
+        return self.params_pattern.flat_length()
 
-    def fold_params(self, x, free: bool = True):
-        return self.params_pattern.fold(x, free=free)
+    def fold_params(self, x, from_free: bool = True):
+        """Parameters as a dict, from a free vector (or a flat one if not `from_free`)."""
+        return self.params_pattern.fold(x, from_free=from_free)
 
-    def flatten_params(self, params, free: bool = True):
-        return self.params_pattern.flatten(params, free=free)
+    def flatten_params(self, params, to_free: bool = True):
+        """Parameters as a free vector (or a flat one if not `to_free`)."""
+        return self.params_pattern.flatten(params, to_free=to_free)
 
     def random_params(self, key, scale: float = 1.0):
         """A random valid parameter dict (a normal draw in free space; not a

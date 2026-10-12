@@ -60,7 +60,7 @@ def test_hyper_and_data_derivatives(models):
     gh = jax.grad(lambda h: npm.log_density_fn()(x, hyper=h))(npm.hyper)
     assert np.all(np.isfinite(gh["V0"]))
     gd = jax.grad(lambda d: npm.log_density_fn(data_as="flat")(x, d))(
-        npm.data_pattern.flatten({k: npm.data[k] for k in npm.data_pattern.keys()}, free=False))
+        npm.data_pattern.flatten({k: npm.data[k] for k in npm.data_pattern.keys()}, to_free=False))
     assert np.all(np.isfinite(gd))
 
 

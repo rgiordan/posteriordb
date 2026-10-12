@@ -66,8 +66,8 @@ class PatternDict(Pattern):
         return self
 
     def _update(self):
-        self._flat_length = sum(p.flat_length(False) for p in self._patterns.values())
-        self._free_flat_length = sum(p.flat_length(True) for p in self._patterns.values())
+        self._flat_length = sum(p.flat_length() for p in self._patterns.values())
+        self._free_length = sum(p.free_length() for p in self._patterns.values())
 
     def as_dict(self):
         return {"patterns": {k: (type(p).__name__, p.as_dict()) for k, p in self._patterns.items()}}
@@ -75,26 +75,26 @@ class PatternDict(Pattern):
     def _split(self, flat_val, free):
         out, offset = {}, 0
         for k, p in self._patterns.items():
-            n = p.flat_length(free)
+            n = p._length(free)
             out[k] = flat_val[offset:offset + n]
             offset += n
         return out
 
-    def _fold_flat(self, flat_val):
-        return {k: self._patterns[k]._fold_flat(v) for k, v in self._split(flat_val, False).items()}
+    def _flat_to_folded(self, flat_val):
+        return {k: self._patterns[k]._flat_to_folded(v) for k, v in self._split(flat_val, False).items()}
 
-    def _flatten_flat(self, folded_val):
-        return _concat([p._flatten_flat(folded_val[k]) for k, p in self._patterns.items()])
+    def _folded_to_flat(self, folded_val):
+        return _concat([p._folded_to_flat(folded_val[k]) for k, p in self._patterns.items()])
 
-    def _fold_free(self, free_val):
+    def _free_to_folded(self, free_val):
         out, logdet = {}, jnp.zeros((), dtype=free_val.dtype)
         for k, v in self._split(free_val, True).items():
-            out[k], ld = self._patterns[k]._fold_free(v)
+            out[k], ld = self._patterns[k]._free_to_folded(v)
             logdet = logdet + ld
         return out, logdet
 
-    def _flatten_free(self, folded_val):
-        return _concat([p._flatten_free(folded_val[k]) for k, p in self._patterns.items()])
+    def _folded_to_free(self, folded_val):
+        return _concat([p._folded_to_free(folded_val[k]) for k, p in self._patterns.items()])
 
     def _validate(self, folded_val, validate_value):
         if not isinstance(folded_val, dict):
@@ -109,9 +109,8 @@ class PatternDict(Pattern):
                 return f"[{k!r}] {msg}"
         return None
 
-    def flat_names(self, free=None):
-        free = self._free(free)
-        return [f"{k}{n}" for k, p in self._patterns.items() for n in p.flat_names(free)]
+    def _names(self, free):
+        return [f"{k}{n}" for k, p in self._patterns.items() for n in p._names(free)]
 
 
 class PatternArray(Pattern):
@@ -127,27 +126,27 @@ class PatternArray(Pattern):
         base_shape = np.shape(base_pattern.empty(valid=True))
         self.shape = self.array_shape + tuple(base_shape)
         self._base_shape = tuple(base_shape)
-        super().__init__(self._m * base_pattern.flat_length(False), self._m * base_pattern.flat_length(True), free_default)
+        super().__init__(self._m * base_pattern.flat_length(), self._m * base_pattern.free_length(), free_default)
 
     def as_dict(self):
         return {"array_shape": self.array_shape, "base": (type(self.base_pattern).__name__, self.base_pattern.as_dict())}
 
-    def _fold_flat(self, flat_val):
+    def _flat_to_folded(self, flat_val):
         rows = jnp.reshape(flat_val, (self._m, -1))
-        return jnp.reshape(jax.vmap(self.base_pattern._fold_flat)(rows), self.shape)
+        return jnp.reshape(jax.vmap(self.base_pattern._flat_to_folded)(rows), self.shape)
 
-    def _flatten_flat(self, folded_val):
+    def _folded_to_flat(self, folded_val):
         items = jnp.reshape(jnp.asarray(folded_val), (self._m,) + self._base_shape)
-        return jnp.reshape(jax.vmap(self.base_pattern._flatten_flat)(items), (-1,))
+        return jnp.reshape(jax.vmap(self.base_pattern._folded_to_flat)(items), (-1,))
 
-    def _fold_free(self, free_val):
+    def _free_to_folded(self, free_val):
         rows = jnp.reshape(free_val, (self._m, -1))
-        x, logdet = jax.vmap(self.base_pattern._fold_free)(rows)
+        x, logdet = jax.vmap(self.base_pattern._free_to_folded)(rows)
         return jnp.reshape(x, self.shape), jnp.sum(logdet)
 
-    def _flatten_free(self, folded_val):
+    def _folded_to_free(self, folded_val):
         items = jnp.reshape(jnp.asarray(folded_val), (self._m,) + self._base_shape)
-        return jnp.reshape(jax.vmap(self.base_pattern._flatten_free)(items), (-1,))
+        return jnp.reshape(jax.vmap(self.base_pattern._folded_to_free)(items), (-1,))
 
     def _validate(self, folded_val, validate_value):
         if tuple(np.shape(folded_val)) != self.shape:
@@ -160,9 +159,8 @@ class PatternArray(Pattern):
                     return f"element {np.unravel_index(i, self.array_shape)}: {msg}"
         return None
 
-    def flat_names(self, free=None):
-        free = self._free(free)
-        base = self.base_pattern.flat_names(free)
+    def _names(self, free):
+        base = self.base_pattern._names(free)
         return [f"[{','.join(map(str, idx))}]{n}" for idx in np.ndindex(*self.array_shape) for n in base]
 
 

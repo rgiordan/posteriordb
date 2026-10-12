@@ -58,10 +58,10 @@ class NumericArrayPattern(Pattern):
         return self.ub < math.inf
 
     # flat <-> folded is a reshape
-    def _fold_flat(self, flat_val):
+    def _flat_to_folded(self, flat_val):
         return jnp.reshape(flat_val, self.shape, order=self.order)
 
-    def _flatten_flat(self, folded_val):
+    def _folded_to_flat(self, folded_val):
         return jnp.reshape(jnp.asarray(folded_val), (-1,), order=self.order)
 
     def _constrain(self, u):
@@ -86,12 +86,12 @@ class NumericArrayPattern(Pattern):
             return jnp.log(self.ub - x)
         return x
 
-    def _fold_free(self, free_val):
+    def _free_to_folded(self, free_val):
         x, logdet = self._constrain(free_val)
-        return self._fold_flat(x), logdet
+        return self._flat_to_folded(x), logdet
 
-    def _flatten_free(self, folded_val):
-        return self._unconstrain(self._flatten_flat(folded_val))
+    def _folded_to_free(self, folded_val):
+        return self._unconstrain(self._folded_to_flat(folded_val))
 
     def _validate(self, folded_val, validate_value):
         msg = check_shape(folded_val, self.shape)
@@ -106,7 +106,7 @@ class NumericArrayPattern(Pattern):
             return f"values must be < ub = {self.ub} (max {x.max()})"
         return None
 
-    def flat_names(self, free=None):
+    def _names(self, free):
         if not self.shape:
             return [""]
         idx = np.array(list(np.ndindex(*self.shape)))
@@ -137,19 +137,19 @@ class OrderedVectorPattern(Pattern):
     def as_dict(self):
         return {"length": self.length, "positive": self.positive}
 
-    def _fold_flat(self, flat_val):
+    def _flat_to_folded(self, flat_val):
         return flat_val
 
-    def _flatten_flat(self, folded_val):
+    def _folded_to_flat(self, folded_val):
         return jnp.asarray(folded_val)
 
-    def _fold_free(self, u):
+    def _free_to_folded(self, u):
         if self.positive:
             return jnp.cumsum(jnp.exp(u)), jnp.sum(u)
         steps = jnp.concatenate([u[:1], jnp.exp(u[1:])])
         return jnp.cumsum(steps), jnp.sum(u[1:])
 
-    def _flatten_free(self, x):
+    def _folded_to_free(self, x):
         x = jnp.asarray(x)
         first = jnp.log(x[:1]) if self.positive else x[:1]
         return jnp.concatenate([first, jnp.log(jnp.diff(x))])

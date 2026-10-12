@@ -97,7 +97,7 @@ def test_derivatives_wrt_data_and_hyper(setup):
     X, y, model = setup
     f = model.log_density_fn("joint", params_as="free", data_as="flat")
     x = jnp.zeros(model.free_dim)
-    d_flat = model.data_pattern.flatten({"x": X, "y": y}, free=False)
+    d_flat = model.data_pattern.flatten({"x": X, "y": y}, to_free=False)
     g = jax.grad(f, argnums=1)(x, d_flat)
     assert g.shape == d_flat.shape and np.all(np.isfinite(g))
     # prior sensitivity: d/d m0 of the log evidence matches autodiff of the exact formula
@@ -219,7 +219,7 @@ def test_jacobian_defaults_and_overrides(setup):
     # not with the likelihood; `jacobian=` turns it on or off for any of them.
     key = jax.random.PRNGKey(3)
     u = jax.random.normal(key, (model.free_dim,))
-    ldj = model.params_pattern.log_abs_det_unfreeing_jacobian(u)
+    ldj = model.params_pattern.free_to_folded_log_abs_det(u)
     assert jnp.abs(ldj) > 1e-3
     for which, default_on in [("joint", True), ("prior", True), ("lik", False)]:
         with_j = model.log_density_fn(which, jacobian=True)(u)

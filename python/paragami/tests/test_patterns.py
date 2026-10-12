@@ -55,40 +55,40 @@ def _chart(name, pattern, flat):
 @pytest.mark.parametrize("name", list(_patterns()))
 def test_round_trips(name):
     pattern = _patterns()[name]
-    u = jax.random.normal(jax.random.PRNGKey(0), (pattern.flat_length(True),))
-    folded = pattern.fold(u, free=True)
+    u = jax.random.normal(jax.random.PRNGKey(0), (pattern.free_length(),))
+    folded = pattern.fold(u, from_free=True)
     ok, msg = pattern.validate_folded(folded)
     assert ok, msg
-    np.testing.assert_allclose(pattern.flatten(folded, free=True), u, atol=1e-10)
-    flat = pattern.flatten(folded, free=False)
-    assert flat.shape == (pattern.flat_length(False),)
-    refolded = pattern.fold(flat, free=False)
+    np.testing.assert_allclose(pattern.flatten(folded, to_free=True), u, atol=1e-10)
+    flat = pattern.flatten(folded, to_free=False)
+    assert flat.shape == (pattern.flat_length(),)
+    refolded = pattern.fold(flat, from_free=False)
     jax.tree_util.tree_map(lambda a, b: np.testing.assert_allclose(a, b, atol=1e-12), folded, refolded)
-    assert len(pattern.flat_names(True)) == pattern.flat_length(True) or pattern.flat_length(True) == 1
-    assert len(pattern.flat_names(False)) == pattern.flat_length(False) or pattern.flat_length(False) == 1
+    assert len(pattern.free_names()) == pattern.free_length() or pattern.free_length() == 1
+    assert len(pattern.flat_names()) == pattern.flat_length() or pattern.flat_length() == 1
 
 
 @pytest.mark.parametrize("name", list(_patterns()))
 def test_log_det_matches_autodiff(name):
     pattern = _patterns()[name]
-    u = 0.5 * jax.random.normal(jax.random.PRNGKey(1), (pattern.flat_length(True),))
+    u = 0.5 * jax.random.normal(jax.random.PRNGKey(1), (pattern.free_length(),))
 
     def chart(u_):
-        return _chart(name, pattern, pattern.flatten(pattern.fold(u_, free=True), free=False, validate_value=False))
+        return _chart(name, pattern, pattern.flatten(pattern.fold(u_, from_free=True), to_free=False, validate_value=False))
 
     jac = jax.jacfwd(chart)(u)
     expected = jnp.linalg.slogdet(jac)[1]
-    _, logdet = pattern.fold_with_log_det(u)
+    _, logdet = pattern.free_to_folded_with_log_det(u)
     np.testing.assert_allclose(logdet, expected, rtol=1e-8, atol=1e-8)
 
 
 def test_transforms_are_jittable_and_vmappable():
     pattern = _patterns()["dict"]
-    us = jax.random.normal(jax.random.PRNGKey(2), (5, pattern.flat_length(True)))
-    folded = jax.jit(jax.vmap(lambda u: pattern.fold_with_log_det(u)))(us)
+    us = jax.random.normal(jax.random.PRNGKey(2), (5, pattern.free_length()))
+    folded = jax.jit(jax.vmap(lambda u: pattern.free_to_folded_with_log_det(u)))(us)
     assert folded[0]["b"].shape == (5, 3)
     assert folded[1].shape == (5,)
-    g = jax.grad(lambda u: pattern.fold_with_log_det(u)[1])(us[0])
+    g = jax.grad(lambda u: pattern.free_to_folded_with_log_det(u)[1])(us[0])
     assert np.all(np.isfinite(g))
 
 
@@ -101,16 +101,16 @@ def test_validation_errors():
     ok, msg = p.validate_folded({"sigma": 1.0})
     assert not ok and "missing" in msg
     with pytest.raises(pg.ValidationError):
-        p.fold(jnp.zeros(4), free=True)  # wrong length (free length is 3)
+        p.fold(jnp.zeros(4), from_free=True)  # wrong length (free length is 3)
     # Value checks are skipped under tracing, shape checks are not.
-    jax.jit(lambda s: p.flatten({"sigma": s, "w": jnp.ones(3) / 3}, free=True))(-1.0)
+    jax.jit(lambda s: p.flatten({"sigma": s, "w": jnp.ones(3) / 3}, to_free=True))(-1.0)
 
 
 def test_column_major_order():
     p = pg.NumericArrayPattern((2, 3), order="F")
     x = jnp.arange(6.0).reshape(2, 3)
-    np.testing.assert_array_equal(p.flatten(x, free=False), [0, 3, 1, 4, 2, 5])
-    assert p.flat_names(False)[:2] == ["[0,0]", "[1,0]"]
+    np.testing.assert_array_equal(p.flatten(x, to_free=False), [0, 3, 1, 4, 2, 5])
+    assert p.flat_names()[:2] == ["[0,0]", "[1,0]"]
 
 
 def test_function_wrappers():
@@ -119,11 +119,11 @@ def test_function_wrappers():
     def f(params, y):
         return jnp.sum((y - params["mu"]) ** 2) / params["sigma"]
 
-    g = pg.FoldFunctionInput(f, p, free=True, argnums=0)
+    g = pg.FoldFunctionInput(f, p, from_free=True, argnums=0)
     u = jnp.array([1.0, 0.0])
     assert g(u, jnp.array([1.0, 2.0])) == f({"mu": 1.0, "sigma": 1.0}, jnp.array([1.0, 2.0]))
     assert jax.grad(g)(u, jnp.array([1.0, 2.0])).shape == (2,)
-    h = pg.FlattenFunctionInput(g, p, free=True, argnums=0)
+    h = pg.FlattenFunctionInput(g, p, to_free=True, argnums=0)
     assert h({"mu": 1.0, "sigma": 1.0}, jnp.array([1.0, 2.0])) == g(u, jnp.array([1.0, 2.0]))
 
 
@@ -134,3 +134,29 @@ def test_empty_random_and_equality():
     r = p.random(jax.random.PRNGKey(0))
     assert p.validate_folded(r)[0]
     assert np.all(np.isnan(p.empty(valid=False)["a"]))
+
+
+@pytest.mark.parametrize("name", list(_patterns()))
+def test_direct_conversions_match_fold_and_flatten(name):
+    pattern = _patterns()[name]
+    u = jax.random.normal(jax.random.PRNGKey(4), (pattern.free_length(),))
+    folded = pattern.free_to_folded(u)
+    same = lambda a, b: jax.tree_util.tree_map(lambda x, y: np.testing.assert_allclose(x, y, atol=1e-12), a, b)
+    same(folded, pattern.fold(u, from_free=True))
+    same(folded, pattern.free_to_folded_with_log_det(u)[0])
+    np.testing.assert_allclose(pattern.free_to_folded_log_abs_det(u), pattern.free_to_folded_with_log_det(u)[1])
+    np.testing.assert_allclose(pattern.folded_to_free(folded), pattern.flatten(folded, to_free=True))
+    flat = pattern.folded_to_flat(folded)
+    np.testing.assert_allclose(flat, pattern.flatten(folded, to_free=False))
+    same(pattern.flat_to_folded(flat), folded)
+
+
+def test_free_default_and_keyword_errors():
+    p = pg.NumericScalarPattern(lb=0.0)
+    with pytest.raises(ValueError, match="from_free"):
+        p.fold(jnp.zeros(1))
+    with pytest.raises(ValueError, match="to_free"):
+        p.flatten(1.0)
+    q = pg.NumericScalarPattern(lb=0.0, free_default=True)
+    np.testing.assert_allclose(q.flatten(1.0), 0.0)
+    np.testing.assert_allclose(q.fold(jnp.zeros(1)), 1.0)

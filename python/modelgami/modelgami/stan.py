@@ -136,26 +136,26 @@ class StanParamsPattern(pg.Pattern):
 
     def __init__(self, bs):
         self._bs = bs
-        self._names = list(bs.param_names())
-        self._shapes = _shapes_from_names(self._names)
-        super().__init__(len(self._names), bs.param_unc_num())
+        self._stan_names = list(bs.param_names())
+        self._shapes = _shapes_from_names(self._stan_names)
+        super().__init__(len(self._stan_names), bs.param_unc_num())
 
     def as_dict(self):
         return {"stan_model": self._bs.name(), "shapes": self._shapes}
 
-    def _fold_flat(self, flat):
-        return _fold_by_names(self._names, self._shapes, flat)
+    def _flat_to_folded(self, flat):
+        return _fold_by_names(self._stan_names, self._shapes, flat)
 
-    def _flatten_flat(self, folded):
-        return jnp.asarray([jnp.asarray(folded[b])[i] for b, i in map(_parse, self._names)])
+    def _folded_to_flat(self, folded):
+        return jnp.asarray([jnp.asarray(folded[b])[i] for b, i in map(_parse, self._stan_names)])
 
-    def _fold_free(self, free):
-        flat = _cb(lambda x: self._bs.param_constrain(x), (len(self._names),), free)
-        return self._fold_flat(flat), jnp.full((), jnp.nan)  # log det: use log_density_fn
+    def _free_to_folded(self, free):
+        flat = _cb(lambda x: self._bs.param_constrain(x), (len(self._stan_names),), free)
+        return self._flat_to_folded(flat), jnp.full((), jnp.nan)  # log det: use log_density_fn
 
-    def _flatten_free(self, folded):
-        flat = self._flatten_flat(folded)
-        return _cb(lambda y: self._bs.param_unconstrain(y), (self._free_flat_length,), flat)
+    def _folded_to_free(self, folded):
+        flat = self._folded_to_flat(folded)
+        return _cb(lambda y: self._bs.param_unconstrain(y), (self._free_length,), flat)
 
     def _validate(self, folded, validate_value):
         if not isinstance(folded, dict) or set(folded) != set(self._shapes):
@@ -165,8 +165,8 @@ class StanParamsPattern(pg.Pattern):
                 return f"[{k!r}] expected shape {s}, got {np.shape(folded[k])}"
         return None
 
-    def flat_names(self, free=None):
-        return list(self._bs.param_unc_names()) if self._free(free) else list(self._names)
+    def _names(self, free):
+        return list(self._bs.param_unc_names()) if free else list(self._stan_names)
 
 
 def _parse(name: str):

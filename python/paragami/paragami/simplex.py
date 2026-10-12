@@ -57,10 +57,10 @@ class SimplexArrayPattern(Pattern):
     def as_dict(self):
         return {"simplex_size": self.simplex_size, "array_shape": self.array_shape}
 
-    def _fold_flat(self, flat_val):
+    def _flat_to_folded(self, flat_val):
         return jnp.reshape(flat_val, self.shape)
 
-    def _flatten_flat(self, folded_val):
+    def _folded_to_flat(self, folded_val):
         return jnp.reshape(jnp.asarray(folded_val), (-1,))
 
     def _one_forward(self, y):
@@ -72,13 +72,13 @@ class SimplexArrayPattern(Pattern):
         jac = jax.jacfwd(lambda y_: self._one_forward(y_)[:-1])(y)
         return jnp.linalg.slogdet(jac)[1]
 
-    def _fold_free(self, free_val):
+    def _free_to_folded(self, free_val):
         y = jnp.reshape(free_val, (self._m, self.simplex_size - 1))
         x = jax.vmap(self._one_forward)(y)
         logdet = jnp.sum(jax.vmap(self._one_log_det)(y)) if self.simplex_size > 1 else jnp.zeros(())
         return jnp.reshape(x, self.shape), logdet
 
-    def _flatten_free(self, folded_val):
+    def _folded_to_free(self, folded_val):
         x = jnp.reshape(jnp.asarray(folded_val), (self._m, self.simplex_size))
         logx = jnp.log(x)
         z = logx - jnp.mean(logx, axis=-1, keepdims=True)
@@ -95,6 +95,6 @@ class SimplexArrayPattern(Pattern):
             return "simplex entries must sum to one along the last axis"
         return None
 
-    def flat_names(self, free=None):
-        shape = self.array_shape + ((self.simplex_size - 1,) if self._free(free) else (self.simplex_size,))
+    def _names(self, free):
+        shape = self.array_shape + ((self.simplex_size - 1,) if free else (self.simplex_size,))
         return ["[" + ",".join(str(i) for i in idx) + "]" for idx in np.ndindex(*shape)]

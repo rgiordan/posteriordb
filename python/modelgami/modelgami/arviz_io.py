@@ -60,7 +60,7 @@ def _as_folded_draws(model, draws, params_as):
     if params_as == "folded":
         return jax.tree_util.tree_map(jnp.asarray, draws)
     draws = jnp.asarray(draws)
-    fold = lambda x: model.params_pattern.fold(x, free=(params_as == "free"), validate_value=False)
+    fold = lambda x: model.params_pattern.fold(x, from_free=(params_as == "free"), validate_value=False)
     return jax.vmap(jax.vmap(fold))(draws)
 
 
