@@ -19,6 +19,7 @@ from .functions import (
     function_output_folded_to_free,
     function_output_free_to_folded,
 )
+from .infer import unconstrained_pattern_like
 from .matrix import CholeskyCorrPattern, CholeskyCovPattern, PSDSymmetricMatrixPattern
 from .numeric import (
     NumericArrayPattern,

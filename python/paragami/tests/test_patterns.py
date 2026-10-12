@@ -181,3 +181,28 @@ def test_free_default_and_keyword_errors():
 def test_nested_dict_names():
     p = pg.PatternDict(a=pg.PatternDict(b=pg.NumericVectorPattern(2), c=pg.NumericScalarPattern()), d=pg.NumericScalarPattern())
     assert p.flat_names() == ["a.b[0]", "a.b[1]", "a.c", "d"]
+
+
+def test_unconstrained_pattern_like():
+    value = {
+        "beta": jnp.array([1.0, 2.0, 3.0]),
+        "sigma": 0.5,
+        "nested": {"cov": np.eye(2), "count": 3},
+        "w": [jnp.zeros(2), 1.0],
+    }
+    p = pg.unconstrained_pattern_like(value)
+    assert list(p.keys()) == ["beta", "sigma", "nested", "w"]
+    assert list(p["w"].keys()) == ["w_0", "w_1"]
+    assert p.free_length() == p.flat_length() == 3 + 1 + 4 + 1 + 2 + 1
+    x = p.folded_to_free({**value, "w": {"w_0": value["w"][0], "w_1": value["w"][1]}})
+    folded = p.free_to_folded(x)
+    np.testing.assert_allclose(folded["nested"]["cov"], np.eye(2))
+    assert folded["sigma"].shape == () and folded["w"]["w_0"].shape == (2,)
+    assert "nested.cov[1,1]" in p.flat_names()
+
+    # Names for unnamed containers come from default_name; a bare leaf is a single array pattern.
+    assert list(pg.unconstrained_pattern_like((1.0, jnp.ones(3)), default_name="theta").keys()) == ["theta_0", "theta_1"]
+    leaf = pg.unconstrained_pattern_like(jnp.ones((2, 3)))
+    assert isinstance(leaf, pg.NumericArrayPattern) and leaf.free_length() == 6
+    with pytest.raises(TypeError):
+        pg.unconstrained_pattern_like({"a": "text"})
