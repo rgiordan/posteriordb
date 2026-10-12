@@ -11,6 +11,8 @@ import jax.numpy as jnp
 import numpy as np
 import paragami as pg
 
+from .dgp import ExchangeableDGP
+
 
 def to_arviz(model, draws, params_as: str = "folded", *, log_likelihood: bool = True,
              posterior_predictive=None, prior=None, prior_predictive=None,
@@ -23,28 +25,25 @@ def to_arviz(model, draws, params_as: str = "folded", *, log_likelihood: bool = 
         (chain, draw, d) (params_as="flat"/"free").
     log_likelihood: for exchangeable models, add the pointwise log
         likelihood (so `az.loo` / `az.waic` work).
+    The model's data, if a dict, become the observed_data group.
     posterior_predictive, prior, prior_predictive: optional extra groups,
         given in the same (chain, draw, ...) layout as dicts.
-    dims, coords: ArviZ dims/coords for parameters and data. Observation
-        fields of exchangeable data get the dimension `obs_dim`.
+    dims, coords: ArviZ dims/coords for parameters and data. The fields
+        of exchangeable data get the leading dimension `obs_dim`.
     """
     posterior = _as_folded_draws(model=model, draws=draws, params_as=params_as)
     groups = {}
     dims = dict(dims or {})
-    if model.exchangeable:
-        for k in model.obs_keys:
-            dims.setdefault(k, [obs_dim] + [f"{k}_dim_{i}" for i in range(np.ndim(model.data[k]) - 1)])
-    if log_likelihood and model.exchangeable:
+    exchangeable = isinstance(model.likelihood, ExchangeableDGP)
+    if exchangeable and isinstance(model.data, dict):
+        for k, v in model.data.items():
+            dims.setdefault(k, [obs_dim] + [f"{k}_dim_{i}" for i in range(np.ndim(v) - 1)])
+    if log_likelihood and exchangeable:
         pw = jax.vmap(jax.vmap(lambda p: model.log_lik_pointwise(p)))(posterior)
         groups["log_likelihood"] = {"log_lik": np.asarray(pw)}
         dims.setdefault("log_lik", [obs_dim])
     if isinstance(model.data, dict):
-        data = {k: np.asarray(v) for k, v in model.data.items() if not isinstance(v, (str,))}
-        obs = {k: v for k, v in data.items() if k in model.obs_keys} if model.exchangeable else data
-        const = {k: v for k, v in data.items() if k not in model.obs_keys} if model.exchangeable else {}
-        groups["observed_data"] = obs
-        if const:
-            groups["constant_data"] = const
+        groups["observed_data"] = {k: np.asarray(v) for k, v in model.data.items()}
     if prior is not None:
         groups["prior"] = pg.folded_draws_to_variables(pattern=model.params_pattern, draws=prior)
     for name, value in (("posterior_predictive", posterior_predictive), ("prior_predictive", prior_predictive)):

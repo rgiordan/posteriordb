@@ -35,20 +35,20 @@ def test_same_model(models):
     # NumPyro orders sites as the program runs (sigma2 first); compare in folded space.
     assert set(npm.params_pattern.keys()) == {"beta", "sigma2"}
     for k in jax.random.split(jax.random.PRNGKey(1), 5):
-        p = hand.random_params(k)
+        p = hand.params_pattern.random(k)
         np.testing.assert_allclose(npm.log_prior(p), hand.log_prior(p), rtol=1e-10)
         np.testing.assert_allclose(npm.log_lik_pointwise(p), hand.log_lik_pointwise(p), rtol=1e-10)
-        x = npm.flatten_params(p, to_free=True)
-        np.testing.assert_allclose(npm.log_density_fn()(x), hand.log_density_fn()(hand.flatten_params(p, to_free=True)), rtol=1e-10)
+        x = npm.params_pattern.folded_to_free(p)
+        np.testing.assert_allclose(npm.log_density_fn()(x), hand.log_density_fn()(hand.params_pattern.folded_to_free(p)),
+                                   rtol=1e-10)
 
 
 def test_contract_and_simulation(models):
     hand, npm = models
     check_model_contract(npm)
-    caps = npm.capabilities
-    assert caps["exchangeable"] and caps["can_sample_prior"] and caps["can_sample_data"]
+    assert isinstance(npm, mg.ExchangeableModel)
     p = npm.sample_prior(jax.random.PRNGKey(2))
-    npm.validate_params(p)
+    assert npm.params_pattern.validate_folded(p)[0]
     d = npm.sample_data(jax.random.PRNGKey(3), p)
     np.testing.assert_array_equal(d["x"], hand.data["x"])
     assert d["y"].shape == hand.data["y"].shape and not np.allclose(d["y"], hand.data["y"])
@@ -56,12 +56,11 @@ def test_contract_and_simulation(models):
 
 def test_hyper_and_data_derivatives(models):
     _, npm = models
-    x = jnp.zeros(npm.free_dim)
+    x = jnp.zeros(npm.params_pattern.free_length())
     gh = jax.grad(lambda h: npm.log_density_fn()(x, hyper=h))(npm.hyper)
     assert np.all(np.isfinite(gh["V0"]))
-    gd = jax.grad(lambda d: npm.log_density_fn(data_as="flat")(x, d))(
-        npm.data_pattern.flatten({k: npm.data[k] for k in npm.data_pattern.keys()}, to_free=False))
-    assert np.all(np.isfinite(gd))
+    gd = jax.grad(lambda d: npm.log_density_fn()(x, data=d))(npm.data)
+    assert np.all(np.isfinite(gd["x"])) and np.all(np.isfinite(gd["y"]))
 
 
 def test_constraint_mapping():

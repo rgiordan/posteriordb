@@ -1,10 +1,11 @@
 # modelgami
 
 A common, JAX-based interface for statistical models, for methodological
-research. You write a model's statistics once, in terms of dicts of arrays:
-a [paragami](../paragami) pattern for the parameters, a log prior and a log
-likelihood. Everything else is generated on request. A method written
-against this interface then runs on any model.
+research. A model is a [paragami](../paragami) pattern for its parameters,
+a prior and a likelihood, its data and its hyperparameters. The prior and
+the likelihood are the same kind of object, a data-generating process
+(`DGP`): a log density and a sampler, either of which may be missing. A
+method written against this interface then runs on any model.
 
 ## Writing a model
 
@@ -20,83 +21,65 @@ def log_prior(params, hyper):
 def log_lik_one(params, datum, hyper):            # one observation: {"x": (p,), "y": ()}
     return stats.norm.logpdf(datum["y"], datum["x"] @ params["beta"], params["sigma"])
 
-model = mg.Model(
+model = mg.ExchangeableModel(
     params_pattern=pg.PatternDict(beta=pg.NumericVectorPattern(3), sigma=pg.NumericScalarPattern(lb=0.0)),
-    data={"x": X, "y": y},          # or a list of per-observation dicts
+    prior=mg.DGP(log_density=log_prior),
+    likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one),
+    data={"x": X, "y": y},          # N observations: every field has a leading N axis
     hyper={"scale": 10.0},
-    log_prior=log_prior,
-    log_lik_one=log_lik_one,        # exchangeable data; use log_lik=... otherwise
 )
 ```
 
-Optional hooks: `sample_prior(key, hyper)`, `sample_one(key, params, datum, hyper)` (or `sample_data` for non-exchangeable data), `log_lik_pointwise` (a vectorized alternative to `log_lik_one`), and `check_params` / `check_data` for extra validation. The same model can also be written as a subclass of `mg.Model`, with these as methods and `params_pattern` as a method or attribute. See [`examples/conjugate_regression.py`](modelgami/examples/conjugate_regression.py) for both styles.
+The functions each piece takes, with the parameters always first:
 
-### Write the likelihood once, get the density and the sampler
+| | log density | sampler |
+|---|---|---|
+| prior, a `DGP` | `log_density(params, hyper)` | `sample(key, hyper) -> params` |
+| likelihood, a `DGP` | `log_density(params, data, hyper)` | `sample(key, params, data, hyper) -> data` |
+| exchangeable likelihood, an `ExchangeableDGP` | `log_density_one(params, datum, hyper)` | `sample_one(key, params, datum, hyper) -> {drawn fields}` |
 
-Instead of writing `log_lik_one` and `sample_one` separately, you can return the observation's distribution, using any distribution library (NumPyro's or TFP's distributions). It is an ordinary JAX function:
+Pass them to the constructor or subclass and define them as methods; see [`examples/conjugate_regression.py`](modelgami/examples/conjugate_regression.py) for both. A missing one raises `NotImplementedError` when called. `prior=None` is a flat prior.
+
+Exchangeable data are an array of N data: a dict (or any pytree) whose every leaf has a leading axis of length N. Anything shared by all observations goes in `hyper`. For a non-exchangeable model, use `mg.Model` with a `DGP` likelihood and any data.
+
+### Exchangeable likelihoods from distributions
+
+`mg.exchangeable_dgp_from_distributions(dists_one)` writes an exchangeable likelihood once, as distribution objects (NumPyro's or TFP's), and gives both its density and its sampler:
 
 ```python
 import numpyro.distributions as dist
 
-def obs_dists_one(params, datum, hyper):
-    return {"y": dist.Normal(datum["x"] @ params["beta"], params["sigma"])}
-
-model = mg.Model(..., obs_dists_one=obs_dists_one)   # gives log_lik_one and sample_one
+likelihood = mg.exchangeable_dgp_from_distributions(
+    lambda params, datum, hyper: {"y": dist.Normal(datum["x"] @ params["beta"], params["sigma"])})
 ```
-
-The prior works the same way, including parameters that depend on earlier ones:
-
-```python
-def prior_dists(hyper):
-    return {
-        "sigma2": dist.InverseGamma(hyper["a0"], hyper["b0"]),
-        "beta": lambda p: dist.MultivariateNormal(hyper["m0"], p["sigma2"] * hyper["V0"]),
-    }
-
-model = mg.Model(..., prior_dists=prior_dists)        # gives log_prior and sample_prior
-```
-
-These are optional; hand-written `log_*` and `sample_*` functions always work.
 
 ### One program for simulation and density (NumPyro)
 
-Probabilistic programming languages specify a model once and use the same program both to simulate and to evaluate the log density. `mg.from_numpyro(program, data, hyper, exchangeable=True)` turns a NumPyro program `program(data, hyper)` into a `Model`:
-
-- Latent sites become the parameters, with a paragami pattern built from their supports, so the unconstrained space uses Stan's transforms.
-- Latent sites make up the prior, and observed sites make up the likelihood. With `exchangeable=True`, a plate over observations gives the pointwise likelihood.
-- Running the program forward gives `sample_prior` and `sample_data`.
-
-The hand-written hooks remain the interface methods rely on; the adapter just generates them. See `tests/test_numpyro_adapter.py`, which checks it against the hand-written conjugate regression.
+`mg.from_numpyro(program, data, hyper, exchangeable=True)` turns a NumPyro program `program(data, hyper)` into a model. Latent sites become the parameters (with a paragami pattern built from their supports, so the unconstrained space uses Stan's transforms) and the prior; observed sites become the likelihood. Running the program forward gives the samplers. `tests/test_numpyro_adapter.py` checks it against the hand-written conjugate regression.
 
 ### Stan programs as models (BridgeStan)
 
-`mg.from_bridgestan("model.stan", data)` wraps a Stan program as a `Model` (optional extra `modelgami[stan]`):
-
-- Its `log_density_fn("joint", params_as="free")` is Stan's log density. It works with `jax.grad`, `jax.hessian`, `mg.hvp`, `jit` and `vmap`, and the derivatives come from Stan itself.
-- `fold_params` and `flatten_params` use Stan's own transforms.
-- `with_data` reloads the compiled library with new data, without recompiling.
-
-A Stan program has a single `target` and fixed data, so this backend has no prior/likelihood split, no pointwise terms, and no derivatives with respect to data. Its main use is as a reference for a JAX translation (`assert_models_match`), or to run a method on a Stan model as-is.
-
-Data shared across observations (sizes, design constants) go in `shared_data=`. `log_lik_one` sees them as part of `datum`.
+`mg.from_bridgestan("model.stan", data)` returns a `StanModel` (optional extra `modelgami[stan]`). Its `log_density_fn("joint", params_as="free")` is Stan's log density, and works with `jax.grad`, `jax.hessian`, `mg.hvp`, `jit` and `vmap`, with derivatives from Stan itself. Its `params_pattern` uses Stan's own transforms. A Stan program has a single `target` and fixed data, so there is no prior/likelihood split. For new data, call `from_bridgestan` again with `model.bridgestan.lib_path`; nothing is recompiled. Its main use is as a reference for a JAX translation (`assert_models_match`).
 
 ## What you get
 
 | | |
 |---|---|
-| `model.log_density_fn(which, params_as, data_as)` | `"joint"`, `"lik"` or `"prior"` as a JAX function of parameters (and data) in `"folded"` (dict), `"flat"` (constrained vector) or `"free"` (unconstrained vector) form. Use it with `jax.grad`, `jax.hessian`, `jax.vmap`, `jax.jit`, or `mg.hvp`. By default each function is, up to a constant, the density it names with respect to the parameters you pass. So in free form the log Jacobian is included for `joint` and `prior` but not for `lik`, the likelihood. `jacobian=True` or `False` overrides this. |
-| `model.log_lik(params)`, `model.log_prior(params)` | Your hooks, with the model's data and hyperparameters as defaults. |
-| `model.log_lik_pointwise(params)` | Per-observation log likelihoods (exchangeable models). |
-| `model.log_lik(params, weights=w)` | Weighted likelihood; `jax.grad` with respect to `w` gives the influence of each observation. |
-| `model.log_lik_subset(params, idx)`, `model.subset(idx)`, `model.bootstrap_weights(key)` | Minibatches (scaled to be unbiased) and the bootstrap. |
-| `model.fold_params`, `model.flatten_params`, `model.random_params`, `model.free_dim` | Moving between representations. |
-| `model.sample_prior(key)`, `model.sample_data(key, params)` | Simulation, when the hooks are given. |
-| `model.validate_params(p)`, `model.validate_data(d)` | Pattern checks plus your own checks. Data are checked when the model is built. |
-| `model.with_data(new_data)` | Same model, new data, no recompilation. |
-| `model.prior`, `model.likelihood` | The two pieces as `DGP` objects (log density + sampler). |
-| `model.capabilities` | What the model supports, for filtering models in a study. |
-| `model.to_arviz(draws)` | ArviZ export (posterior, pointwise log likelihood for `az.loo`, observed and constant data). The parameter conversion is paragami's; `paragami.arviz_to_free_draws(model.params_pattern, idata)` reads draws back. |
+| `model.log_density_fn(which, params_as=..., jacobian=...)` | `"joint"`, `"lik"` or `"prior"` as a JAX function `f(p, data=None, hyper=None, **likelihood_kwargs)` of the parameters in `"folded"` (dict), `"flat"` (constrained vector) or `"free"` (unconstrained vector) form. Use it with `jax.grad`, `jax.hessian`, `jax.vmap`, `jax.jit`, or `mg.hvp`; the data and hyperparameters are arguments too. By default each function is, up to a constant, the density it names with respect to the parameters you pass, so in free form the log Jacobian is included for `joint` and `prior` but not for `lik`. `jacobian=True` or `False` overrides this. |
+| `model.log_prior(params, hyper=None)`, `model.log_lik(params, data=None, hyper=None)` | The prior's and likelihood's log densities, with the model's data and hyperparameters as defaults. |
+| `model.sample_prior(key)`, `model.sample_data(key, params)` | Simulation. |
+| `model.params_pattern` | paragami, to move parameters between representations. |
+| `model.to_arviz(draws)` | ArviZ export: posterior, pointwise log likelihood for `az.loo` (exchangeable models), observed data. |
 
-`modelgami.testing.check_model_contract(model)` checks that all of the above agree with each other. `assert_models_match(a, b)` compares two models.
+An `ExchangeableModel` also has:
+
+| | |
+|---|---|
+| `model.n_obs`, `model.log_lik_pointwise(params)` | The number of observations and the per-observation log likelihoods. |
+| `model.log_lik(params, weights=w)` | Weighted likelihood; `jax.grad` with respect to `w` gives the influence of each observation. |
+| `model.bootstrap_weights(key)` | Multinomial weights for the bootstrap. |
+| `model.likelihood.subset(data, idx)`, `model.likelihood.log_density_subset(params, data, hyper, idx)` | Data subsets and minibatch estimates (scaled to be unbiased). |
+
+`modelgami.testing.check_model_contract(model)` checks that the folded, flat and free densities and the exchangeable extras agree with each other. `assert_models_match(a, b)` compares two models.
 
 Tests: `pytest tests`.

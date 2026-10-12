@@ -11,18 +11,18 @@ simulate and how to evaluate the log density.
 
     model = mg.from_numpyro(regression, data={"x": X, "y": y}, hyper=hyper, exchangeable=True)
 
-The program's sites become the usual hooks:
+The program's sites become the model's prior and likelihood:
 
 - Latent sites are the parameters. Their supports become a paragami pattern,
   so the unconstrained space uses Stan's transforms, not NumPyro's.
-- Latent sites make up `log_prior`.
+- The prior's log density is the latent sites' log density, and its sampler
+  runs the program forward.
 - Observed sites (`obs=...`) make up the likelihood. With
-  `exchangeable=True`, each observed site's log density must have one entry
-  per observation (a plate over the leading axis of the data), which gives
-  `log_lik_pointwise`, weights and subsets.
-- `sample_prior` runs the program forward.
-- `sample_data` re-runs it, drawing the observed sites instead of
-  conditioning on them. To use it, name each observed site after its field
+  `exchangeable=True` the result is an `ExchangeableModel`, and each
+  observed site's log density must have one entry per observation (a plate
+  over the leading axis of the data).
+- The likelihood's sampler re-runs the program, drawing the observed sites
+  instead of conditioning on them. Name each observed site after its field
   in `data` (e.g. `numpyro.sample("y", ..., obs=data["y"])`).
 
 Everything stays a JAX function of params, data and hyper, so derivatives
@@ -37,7 +37,8 @@ import jax
 import jax.numpy as jnp
 import paragami as pg
 
-from .model import Model
+from .dgp import DGP, ExchangeableDGP
+from .model import ExchangeableModel, Model
 
 try:
     from numpyro import handlers
@@ -48,16 +49,12 @@ except ImportError:  # optional extra modelgami[numpyro]
     Messenger = object
 
 
-def from_numpyro(model_fn: Callable, data, hyper=None, *, shared_data=None, exchangeable: bool = False,
-                 params_pattern: Optional[pg.Pattern] = None, name: Optional[str] = None, **kwargs) -> Model:
-    """`model_fn(data, hyper)` is a NumPyro program; see the module docstring.
-    Extra keyword arguments (e.g. `check_data`) are passed to `Model`."""
+def from_numpyro(model_fn: Callable, data, hyper=None, *, exchangeable: bool = False,
+                 params_pattern: Optional[pg.Pattern] = None, name: Optional[str] = None) -> Model:
+    """`model_fn(data, hyper)` is a NumPyro program; see the module docstring."""
     if handlers is None:
         raise ImportError("from_numpyro needs NumPyro: pip install 'modelgami[numpyro]'")
     hyper = {} if hyper is None else hyper
-    full_data = _stack(data)
-    if shared_data:
-        full_data = {**full_data, **shared_data}
 
     def trace(*, params, d, h, key=None, resample=()):
         fn = model_fn
@@ -68,7 +65,7 @@ def from_numpyro(model_fn: Callable, data, hyper=None, *, shared_data=None, exch
             fn = handlers.substitute(fn, data=params)
         return handlers.trace(fn).get_trace(d, h)
 
-    tr = trace(params=None, d=full_data, h=hyper)
+    tr = trace(params=None, d=data, h=hyper)
     latent = [k for k, s in tr.items() if s["type"] == "sample" and not s["is_observed"]]
     observed = [k for k, s in tr.items() if s["type"] == "sample" and s["is_observed"]]
     if params_pattern is None:
@@ -82,30 +79,40 @@ def from_numpyro(model_fn: Callable, data, hyper=None, *, shared_data=None, exch
             total = total + (lp if pointwise else jnp.sum(lp))
         return total
 
-    def log_prior(params, h):
-        return site_sum(trace(params=params, d=full_data, h=h), latent)
-
-    def sample_prior(key, h):
-        t = trace(params=None, d=full_data, h=h, key=key)
-        return {k: t[k]["value"] for k in latent}
+    # The prior runs the program with the model's data (for plate sizes).
+    prior = DGP(
+        log_density=lambda params, h: site_sum(trace(params=params, d=data, h=h), latent),
+        sample=lambda key, h: {k: v["value"] for k, v in trace(params=None, d=data, h=h, key=key).items()
+                               if k in latent},
+    )
 
     def sample_data(key, params, d, h):
         t = trace(params=params, d=d, h=h, key=key, resample=observed)
         return {**d, **{k: t[k]["value"] for k in observed if k in d}}
 
-    hooks = dict(log_prior=log_prior if latent else None, sample_prior=sample_prior if latent else None)
-    hooks = {k: v for k, v in hooks.items() if v is not None}
     if exchangeable:
-        hooks["log_lik_pointwise"] = lambda params, d, h: site_sum(trace(params=params, d=d, h=h), observed, pointwise=True)
-    else:
-        hooks["log_lik"] = lambda params, d, h: site_sum(trace(params=params, d=d, h=h), observed)
-    model = Model(params_pattern=params_pattern, data=data, shared_data=shared_data, hyper=hyper,
-                  name=name or getattr(model_fn, "__name__", None), **hooks, **kwargs)
-    # Simulation through the program; bound after construction because it
-    # simulates whole data sets, not one observation at a time.
-    model._user["sample_data"] = sample_data
-    model._expose_hooks()
-    return model
+        likelihood = _NumPyroLikelihood(
+            pointwise=lambda params, d, h: site_sum(trace(params=params, d=d, h=h), observed, pointwise=True),
+            sample=sample_data)
+        return ExchangeableModel(params_pattern=params_pattern, prior=prior, likelihood=likelihood, data=data,
+                                 hyper=hyper, name=name or getattr(model_fn, "__name__", None))
+    likelihood = DGP(log_density=lambda params, d, h: site_sum(trace(params=params, d=d, h=h), observed),
+                     sample=sample_data)
+    return Model(params_pattern=params_pattern, prior=prior, likelihood=likelihood, data=data, hyper=hyper,
+                 name=name or getattr(model_fn, "__name__", None))
+
+
+class _NumPyroLikelihood(ExchangeableDGP):
+    """An exchangeable likelihood whose pointwise terms come from the
+    program's observed sites, all observations at once."""
+
+    def __init__(self, *, pointwise, sample):
+        super().__init__()
+        self._pointwise = pointwise
+        self.sample = sample
+
+    def log_density_pointwise(self, params, data, hyper):
+        return self._pointwise(params, data, hyper)
 
 
 class _Unobserve(Messenger):
@@ -154,8 +161,3 @@ def pattern_for_support(support, *, shape) -> pg.Pattern:
         return pg.PSDSymmetricMatrixPattern(shape[0])
     raise NotImplementedError(f"no paragami pattern for NumPyro support {support!r}; pass params_pattern=")
 
-
-def _stack(data):
-    if isinstance(data, (list, tuple)):
-        return jax.tree_util.tree_map(lambda *xs: jnp.stack([jnp.asarray(x) for x in xs]), *data)
-    return {k: (jnp.asarray(v) if not isinstance(v, (int, str)) else v) for k, v in data.items()}
