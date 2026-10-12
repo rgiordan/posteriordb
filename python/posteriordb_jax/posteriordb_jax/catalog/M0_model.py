@@ -31,7 +31,7 @@ def log_lik_one(params, datum, hyper):
 
 
 def sample_one(key, params, datum, hyper):
-    return {"y": sample_history(key=key, omega=params["omega"], p=jnp.full(hyper["T"], params["p"]))}
+    return {"y": sample_history(key=key, omega=params["omega"], p=jnp.full(datum["y"].shape, params["p"]))}
 
 
 def build(raw):

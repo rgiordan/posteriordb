@@ -11,10 +11,11 @@
 import jax
 import jax.numpy as jnp
 from jax.scipy import stats
-from jax.scipy.special import gammaln
 
 import modelgami as mg
 import paragami as pg
+
+from ._distributions import binomial_logit_logpmf
 
 STAN_MODEL = "GLM_Binomial_model"
 POSTERIORS = ["GLM_Binomial_data-GLM_Binomial_model"]
@@ -31,10 +32,7 @@ def logit_p(params, datum):
 
 
 def log_lik_one(params, datum, hyper):
-    eta = logit_p(params=params, datum=datum)
-    c, n = datum["C"], datum["N"]
-    log_choose = gammaln(n + 1.0) - gammaln(c + 1.0) - gammaln(n - c + 1.0)
-    return log_choose + c * eta - n * jax.nn.softplus(eta)
+    return binomial_logit_logpmf(datum["C"], n=datum["N"], logit_p=logit_p(params=params, datum=datum))
 
 
 def sample_one(key, params, datum, hyper):

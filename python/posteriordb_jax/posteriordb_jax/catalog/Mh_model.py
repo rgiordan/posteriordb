@@ -17,15 +17,15 @@ y[i] is the number of occasions individual i was captured, out of T):
 Not exchangeable in the modelgami sense: each individual has its own eps_raw.
 """
 
-import jax
 import jax.numpy as jnp
 from jax.scipy import stats
-from jax.scipy.special import gammaln, logit
+from jax.scipy.special import logit
 
 import modelgami as mg
 import paragami as pg
 
 from ._capture import log_lik_augmented
+from ._distributions import binomial_logit_logpmf
 
 STAN_MODEL = "Mh_model"
 POSTERIORS = ["Mh_data-Mh_model"]
@@ -38,8 +38,7 @@ def log_prior(params, hyper):
 def log_lik(params, data, hyper):
     y, t = data["y"], hyper["T"]
     eps = logit(params["mean_p"]) + params["sigma"] * params["eps_raw"]
-    log_choose = gammaln(t + 1.0) - gammaln(y + 1.0) - gammaln(t - y + 1.0)
-    captures = log_choose + y * eps - t * jax.nn.softplus(eps)
+    captures = binomial_logit_logpmf(y, n=t, logit_p=eps)
     return jnp.sum(log_lik_augmented(omega=params["omega"], log_lik_captures=captures, captured=y > 0))
 
 
