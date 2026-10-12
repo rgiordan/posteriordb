@@ -31,6 +31,19 @@ model = mg.Model(
 
 Optional hooks: `sample_prior(key, hyper)`, `sample_one(key, params, datum, hyper)` (or `sample_data` for non-exchangeable data), `log_lik_pointwise` (a vectorized alternative to `log_lik_one`), and `check_params` / `check_data` for extra validation. The same model can also be written as a subclass of `mg.Model`, with these as methods and `params_pattern` as a method or attribute. See [`examples/conjugate_regression.py`](modelgami/examples/conjugate_regression.py) for both styles.
 
+### Write the likelihood once, get the density and the sampler
+
+Instead of writing `log_lik_one` and `sample_one` separately, you can return the observation's distribution, using any distribution library (NumPyro's or TFP's distributions). It is an ordinary JAX function:
+
+```python
+import numpyro.distributions as dist
+
+def obs_dists_one(params, datum, hyper):
+    return {"y": dist.Normal(datum["x"] @ params["beta"], params["sigma"])}
+
+model = mg.Model(..., obs_dists_one=obs_dists_one)   # gives log_lik_one and sample_one
+```
+
 ### One program for simulation and density (NumPyro)
 
 Probabilistic programming languages specify a model once and use the same program both to simulate and to evaluate the log density. `mg.from_numpyro(program, data, hyper, exchangeable=True)` turns a NumPyro program `program(data, hyper)` into a `Model`:

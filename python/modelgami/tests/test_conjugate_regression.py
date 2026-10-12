@@ -144,3 +144,21 @@ def test_arviz_export_and_loo(setup):
     free = jax.vmap(jax.vmap(model.flatten_params))(draws)
     idata2 = model.to_arviz(free, params_as="free")
     np.testing.assert_allclose(np.asarray(idata2["posterior"]["sigma2"]), np.asarray(draws["sigma2"]), rtol=1e-10)
+
+
+def test_obs_dists_one_gives_density_and_sampler(setup):
+    """Writing the likelihood once as distribution objects (ordinary Python,
+    no modeling language) gives both log_lik_one and sample_one."""
+    dist = pytest.importorskip("numpyro.distributions")
+    X, y, model = setup
+
+    def obs_dists_one(params, datum, hyper):
+        return {"y": dist.Normal(datum["x"] @ params["beta"], jnp.sqrt(params["sigma2"]))}
+
+    other = mg.Model(params_pattern=model.params_pattern, data={"x": X, "y": y}, hyper=model.hyper,
+                     log_prior=cr.log_prior, obs_dists_one=obs_dists_one)
+    assert_models_match(model, other)
+    p = model.random_params(jax.random.PRNGKey(7))
+    d = other.sample_data(jax.random.PRNGKey(8), p)
+    assert d["y"].shape == y.shape and not np.allclose(d["y"], y)
+    check_model_contract(other)

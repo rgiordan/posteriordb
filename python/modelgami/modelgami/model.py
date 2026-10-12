@@ -7,6 +7,10 @@ intuitive structures (dicts of arrays):
     log_prior(params, hyper)     optional
     log_lik(params, data, hyper)                    -- or, for exchangeable data,
     log_lik_one(params, datum, hyper)               -- one observation, or
+    obs_dists_one(params, datum, hyper) -> {field: distribution}
+                                                    -- one observation, as
+                                                       distribution objects; gives
+                                                       both log_lik_one and sample_one
     log_lik_pointwise(params, data, hyper) -> (N,)  -- all observations at once
     sample_prior(key, hyper) -> params              optional
     sample_one(key, params, datum, hyper) -> datum  optional (exchangeable)
@@ -45,7 +49,7 @@ from .validation import ValidationError, run_check
 _REPRESENTATIONS = ("folded", "flat", "free")
 _HOOKS = (
     "log_prior", "log_lik", "log_lik_one", "log_lik_pointwise",
-    "sample_prior", "sample_one", "sample_data", "check_params", "check_data",
+    "sample_prior", "sample_one", "sample_data", "check_params", "check_data", "obs_dists_one",
 )
 
 
@@ -85,6 +89,11 @@ class Model:
         self.params_pattern = params_pattern
 
         u = self._user
+        if "obs_dists_one" in u:
+            if "log_lik_one" in u:
+                raise TypeError("give either obs_dists_one or log_lik_one, not both")
+            u["log_lik_one"], one_sampler = _from_obs_dists(u["obs_dists_one"])
+            u.setdefault("sample_one", one_sampler)
         if "log_lik" in u and ("log_lik_one" in u or "log_lik_pointwise" in u):
             raise TypeError("give either log_lik, or log_lik_one / log_lik_pointwise for exchangeable data, not both")
         if "log_lik" not in u and "log_lik_one" not in u and "log_lik_pointwise" not in u:
@@ -386,6 +395,29 @@ def hvp(f, argnum: int = 0):
     if argnum != 0:
         raise NotImplementedError("hvp currently differentiates the first argument")
     return hv
+
+
+def _from_obs_dists(obs_dists_one):
+    """log_lik_one and sample_one from a function returning, for one
+    observation, a dict {field: distribution} of the observed fields. Any
+    distribution object with `log_prob(value)` and `sample(key)` works, e.g.
+    from numpyro.distributions or tfp.substrates.jax.distributions."""
+    def log_lik_one(params, datum, hyper):
+        return sum(jnp.sum(d.log_prob(datum[k])) for k, d in obs_dists_one(params, datum, hyper).items())
+
+    def sample_one(key, params, datum, hyper):
+        ds = obs_dists_one(params, datum, hyper)
+        keys = jax.random.split(key, len(ds))
+        return {k: _draw(d, kk).astype(jnp.asarray(datum[k]).dtype) for (k, d), kk in zip(ds.items(), keys)}
+
+    return log_lik_one, sample_one
+
+
+def _draw(d, key):
+    try:
+        return d.sample(key)  # numpyro
+    except TypeError:
+        return d.sample(seed=key)  # tfp
 
 
 def _to_array(v):
