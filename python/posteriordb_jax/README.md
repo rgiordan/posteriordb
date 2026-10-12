@@ -41,7 +41,7 @@ catalog.list_models(exchangeable=True)                    # filter posteriors by
 draws = catalog.reference_draws("kidiq-kidscore_momiq")   # posteriordb's reference draws
 ```
 
-Install for development (from `python/`): `pip install -e paragami -e modelgami -e posteriordb_jax`.
+Install for development (from `python/`): `pip install -e paragami -e modelgami -e "posteriordb_jax[test]"`. The catalog alone needs neither TensorFlow Probability nor BridgeStan; they are the `legacy` and `stan` extras.
 The old TFP-based code needs `jax<=0.5` (TFP 0.25 breaks on newer JAX); paragami and modelgami work on current JAX.
 
 ## Status (old-style models)
