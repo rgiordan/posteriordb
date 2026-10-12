@@ -19,12 +19,12 @@ def _logit(params, datum):
 
 
 def log_lik_one(params, datum, hyper):
-    logit = _logit(params, datum)
+    logit = _logit(params=params, datum=datum)
     return datum["switched"] * logit - jax.nn.softplus(logit)
 
 
 def sample_one(key, params, datum, hyper):
-    return {"switched": jax.random.bernoulli(key, jax.nn.sigmoid(_logit(params, datum))).astype(datum["switched"].dtype)}
+    return {"switched": jax.random.bernoulli(key, p=jax.nn.sigmoid(_logit(params=params, datum=datum))).astype(datum["switched"].dtype)}
 
 
 def build(raw):

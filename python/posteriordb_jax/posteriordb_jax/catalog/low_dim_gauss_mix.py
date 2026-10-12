@@ -22,15 +22,15 @@ POSTERIORS = ["low_dim_gauss_mix-low_dim_gauss_mix"]
 
 
 def log_prior(params, hyper):
-    return (jnp.sum(stats.norm.logpdf(params["sigma"], 0.0, 2.0))
-            + jnp.sum(stats.norm.logpdf(params["mu"], 0.0, 2.0))
-            + stats.beta.logpdf(params["theta"], 5.0, 5.0))
+    return (jnp.sum(stats.norm.logpdf(params["sigma"], loc=0.0, scale=2.0))
+            + jnp.sum(stats.norm.logpdf(params["mu"], loc=0.0, scale=2.0))
+            + stats.beta.logpdf(params["theta"], a=5.0, b=5.0))
 
 
 def log_lik_one(params, datum, hyper):
     mu, sigma, theta = params["mu"], params["sigma"], params["theta"]
-    return jnp.logaddexp(jnp.log(theta) + stats.norm.logpdf(datum["y"], mu[0], sigma[0]),
-                         jnp.log1p(-theta) + stats.norm.logpdf(datum["y"], mu[1], sigma[1]))
+    return jnp.logaddexp(jnp.log(theta) + stats.norm.logpdf(datum["y"], loc=mu[0], scale=sigma[0]),
+                         jnp.log1p(-theta) + stats.norm.logpdf(datum["y"], loc=mu[1], scale=sigma[1]))
 
 
 def sample_one(key, params, datum, hyper):

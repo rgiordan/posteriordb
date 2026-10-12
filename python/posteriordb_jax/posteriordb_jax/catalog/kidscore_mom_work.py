@@ -5,7 +5,7 @@
 
 import jax.numpy as jnp
 
-from ._regression import cauchy_sigma_prior, normal_regression, ones_and  # noqa: F401
+from ._regression import normal_regression, ones_and
 
 STAN_MODEL = "kidscore_mom_work"
 POSTERIORS = ['kidiq_with_mom_work-kidscore_mom_work']

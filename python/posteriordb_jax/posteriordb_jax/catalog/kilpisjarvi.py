@@ -21,12 +21,12 @@ POSTERIORS = ["kilpisjarvi_mod-kilpisjarvi"]
 
 
 def log_prior(params, hyper):
-    return (stats.norm.logpdf(params["alpha"], hyper["pmualpha"], hyper["psalpha"])
-            + stats.norm.logpdf(params["beta"], hyper["pmubeta"], hyper["psbeta"]))
+    return (stats.norm.logpdf(params["alpha"], loc=hyper["pmualpha"], scale=hyper["psalpha"])
+            + stats.norm.logpdf(params["beta"], loc=hyper["pmubeta"], scale=hyper["psbeta"]))
 
 
 def log_lik_one(params, datum, hyper):
-    return stats.norm.logpdf(datum["y"], params["alpha"] + params["beta"] * datum["x"], params["sigma"])
+    return stats.norm.logpdf(datum["y"], loc=params["alpha"] + params["beta"] * datum["x"], scale=params["sigma"])
 
 
 def build(raw):

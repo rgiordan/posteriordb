@@ -21,12 +21,12 @@ POSTERIORS = ["kidiq-kidscore_momiq"]
 
 
 def log_prior(params, hyper):
-    return stats.cauchy.logpdf(params["sigma"], 0.0, 2.5)
+    return stats.cauchy.logpdf(params["sigma"], loc=0.0, scale=2.5)
 
 
 def log_lik_one(params, datum, hyper):
     mean = params["beta"][0] + params["beta"][1] * datum["mom_iq"]
-    return stats.norm.logpdf(datum["kid_score"], mean, params["sigma"])
+    return stats.norm.logpdf(datum["kid_score"], loc=mean, scale=params["sigma"])
 
 
 def sample_one(key, params, datum, hyper):

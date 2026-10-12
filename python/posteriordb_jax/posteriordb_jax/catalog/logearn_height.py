@@ -17,7 +17,7 @@ POSTERIORS = ["earnings-logearn_height"]
 
 def log_lik_one(params, datum, hyper):
     mean = params["beta"][0] + params["beta"][1] * datum["height"]
-    return stats.norm.logpdf(jnp.log(datum["earn"]), mean, params["sigma"])
+    return stats.norm.logpdf(jnp.log(datum["earn"]), loc=mean, scale=params["sigma"])
 
 
 def build(raw):

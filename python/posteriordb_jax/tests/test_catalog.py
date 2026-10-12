@@ -25,19 +25,22 @@ def test_contract(name):
 def test_matches_old_translation(name):
     """Same free vector, same log density and gradient as the existing
     (BridgeStan-verified) StatisticalModel version. The tolerance allows
-    TFP's ~1e-7 constant offset in some log densities (e.g. Cauchy), which
+    TFP's small constant offsets in some log densities (e.g. Cauchy, or
+    a normal summed over the ~12,000 radon houses), which
     the new versions don't have: they match Stan to ~1e-14."""
     model = catalog.load(name)
     mod = catalog.module_for(name)
     raw = load_data(load_posterior_info(name)["data_name"])
-    data = {k: (jnp.asarray(v, dtype=jnp.float64) if isinstance(v, list) else v) for k, v in raw.items()}
-    if mod.STAN_MODEL == "wells_dist":
-        data["switched"] = raw["switched"]
+    # Lists become float arrays, except the fields the new model casts to int32
+    # (indices and 0/1 outcomes).
+    int_fields = {k for k, v in model.data.items() if jnp.asarray(v).dtype == jnp.int32}
+    data = {k: (jnp.asarray(v, dtype=jnp.int32 if k in int_fields else jnp.float64) if isinstance(v, list) else v)
+            for k, v in raw.items()}
     old = MODEL_REGISTRY[mod.STAN_MODEL](data)
     f = model.log_density_fn("joint", params_as="free")
     for k in jax.random.split(jax.random.PRNGKey(0), 5):
         x = jax.random.normal(k, (model.free_dim,))
-        np.testing.assert_allclose(f(x), old.log_prob_unconstrained(x), rtol=1e-9, atol=1e-6)
+        np.testing.assert_allclose(f(x), old.log_prob_unconstrained(x), rtol=1e-8, atol=1e-6)
         np.testing.assert_allclose(jax.grad(f)(x), old.grad_unconstrained(x), rtol=1e-9, atol=1e-8)
 
 

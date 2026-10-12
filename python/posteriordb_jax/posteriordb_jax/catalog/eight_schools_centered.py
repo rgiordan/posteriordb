@@ -20,13 +20,13 @@ POSTERIORS = ["eight_schools-eight_schools_centered"]
 
 
 def log_prior(params, hyper):
-    return (stats.norm.logpdf(params["mu"], 0.0, 5.0)
-            + stats.cauchy.logpdf(params["tau"], 0.0, 5.0)
-            + jnp.sum(stats.norm.logpdf(params["theta"], params["mu"], params["tau"])))
+    return (stats.norm.logpdf(params["mu"], loc=0.0, scale=5.0)
+            + stats.cauchy.logpdf(params["tau"], loc=0.0, scale=5.0)
+            + jnp.sum(stats.norm.logpdf(params["theta"], loc=params["mu"], scale=params["tau"])))
 
 
 def log_lik(params, data, hyper):
-    return jnp.sum(stats.norm.logpdf(data["y"], params["theta"], data["sigma"]))
+    return jnp.sum(stats.norm.logpdf(data["y"], loc=params["theta"], scale=data["sigma"]))
 
 
 def build(raw):

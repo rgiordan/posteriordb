@@ -20,11 +20,11 @@ POSTERIORS = ["sblri-blr", "sblrc-blr"]
 
 
 def log_prior(params, hyper):
-    return jnp.sum(stats.norm.logpdf(params["beta"], 0.0, 10.0)) + stats.norm.logpdf(params["sigma"], 0.0, 10.0)
+    return jnp.sum(stats.norm.logpdf(params["beta"], loc=0.0, scale=10.0)) + stats.norm.logpdf(params["sigma"], loc=0.0, scale=10.0)
 
 
 def log_lik_one(params, datum, hyper):
-    return stats.norm.logpdf(datum["y"], datum["X"] @ params["beta"], params["sigma"])
+    return stats.norm.logpdf(datum["y"], loc=datum["X"] @ params["beta"], scale=params["sigma"])
 
 
 def sample_one(key, params, datum, hyper):

@@ -20,13 +20,13 @@ POSTERIORS = ["normal_2-normal_mixture"]
 
 
 def log_prior(params, hyper):
-    return stats.uniform.logpdf(params["theta"], 0.0, 1.0) + jnp.sum(stats.norm.logpdf(params["mu"], 0.0, 10.0))
+    return stats.uniform.logpdf(params["theta"], loc=0.0, scale=1.0) + jnp.sum(stats.norm.logpdf(params["mu"], loc=0.0, scale=10.0))
 
 
 def log_lik_one(params, datum, hyper):
     mu, theta = params["mu"], params["theta"]
-    return jnp.logaddexp(jnp.log(theta) + stats.norm.logpdf(datum["y"], mu[0], 1.0),
-                         jnp.log1p(-theta) + stats.norm.logpdf(datum["y"], mu[1], 1.0))
+    return jnp.logaddexp(jnp.log(theta) + stats.norm.logpdf(datum["y"], loc=mu[0], scale=1.0),
+                         jnp.log1p(-theta) + stats.norm.logpdf(datum["y"], loc=mu[1], scale=1.0))
 
 
 def build(raw):

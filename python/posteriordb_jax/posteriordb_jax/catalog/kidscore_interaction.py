@@ -3,9 +3,7 @@
     kid_score ~ normal(beta[1] + beta[2] * mom_hs + beta[3] * mom_iq + beta[4] * mom_hs .* mom_iq, sigma);  sigma ~ cauchy(0, 2.5)
 """
 
-import jax.numpy as jnp
-
-from ._regression import cauchy_sigma_prior, normal_regression, ones_and  # noqa: F401
+from ._regression import cauchy_sigma_prior, normal_regression, ones_and
 
 STAN_MODEL = "kidscore_interaction"
 POSTERIORS = ['kidiq-kidscore_interaction']

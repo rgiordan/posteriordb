@@ -20,9 +20,9 @@ POSTERIORS = ["radon_all-radon_pooled", "radon_mn-radon_pooled"]
 
 
 def log_prior(params, hyper):
-    return (stats.norm.logpdf(params["sigma_y"], 0.0, 1.0)
-            + stats.norm.logpdf(params["alpha"], 0.0, 10.0)
-            + stats.norm.logpdf(params["beta"], 0.0, 10.0))
+    return (stats.norm.logpdf(params["sigma_y"], loc=0.0, scale=1.0)
+            + stats.norm.logpdf(params["alpha"], loc=0.0, scale=10.0)
+            + stats.norm.logpdf(params["beta"], loc=0.0, scale=10.0))
 
 
 def _mean(params, datum):
@@ -30,11 +30,11 @@ def _mean(params, datum):
 
 
 def log_lik_one(params, datum, hyper):
-    return stats.norm.logpdf(datum["log_radon"], _mean(params, datum), params["sigma_y"])
+    return stats.norm.logpdf(datum["log_radon"], loc=_mean(params=params, datum=datum), scale=params["sigma_y"])
 
 
 def sample_one(key, params, datum, hyper):
-    return {"log_radon": _mean(params, datum) + params["sigma_y"] * jax.random.normal(key)}
+    return {"log_radon": _mean(params=params, datum=datum) + params["sigma_y"] * jax.random.normal(key)}
 
 
 def build(raw):

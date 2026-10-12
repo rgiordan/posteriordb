@@ -3,9 +3,7 @@
     weight ~ normal(beta[1] + beta[2] * diam1 + ... + beta[7] * group, sigma)
 """
 
-import jax.numpy as jnp
-
-from ._regression import cauchy_sigma_prior, normal_regression, ones_and  # noqa: F401
+from ._regression import normal_regression, ones_and
 
 STAN_MODEL = "mesquite"
 POSTERIORS = ['mesquite-mesquite']
