@@ -226,3 +226,26 @@ def test_pattern_to_code_details():
     rebuilt = eval(code, {"pg": pg})
     assert rebuilt == p and rebuilt["s"].free_default is True
     print(code)
+
+
+def test_arviz_round_trip():
+    az = pytest.importorskip("arviz")
+    p = pg.PatternDict(beta=pg.NumericVectorPattern(2), sigma=pg.NumericScalarPattern(lb=0.0),
+                       inner=pg.PatternDict(w=pg.SimplexArrayPattern(3), cov=pg.PSDSymmetricMatrixPattern(2)))
+    free = jax.random.normal(jax.random.PRNGKey(0), (2, 5, p.free_length()))
+    idata = pg.free_draws_to_arviz(p, free, coords={"coef": ["a", "b"]}, dims={"beta": ["coef"]},
+                                   extra_groups={"observed_data": {"y": np.zeros(4)}})
+    post = idata["posterior"] if not hasattr(idata, "posterior") else idata.posterior
+    assert set(post.data_vars) == {"beta", "sigma", "inner.w", "inner.cov"}
+    assert post["inner.cov"].shape == (2, 5, 2, 2) and list(post["beta"].coords["coef"].values) == ["a", "b"]
+    np.testing.assert_allclose(pg.arviz_to_free_draws(p, idata), free, atol=1e-10)
+    folded = pg.arviz_to_folded_draws(p, idata)
+    np.testing.assert_allclose(folded["inner"]["w"].sum(-1), 1.0)
+    flat = pg.arviz_to_flat_draws(p, idata)
+    assert flat.shape == (2, 5, p.flat_length())
+    again = pg.flat_draws_to_arviz(p, flat, group="prior")
+    np.testing.assert_allclose(pg.arviz_to_free_draws(p, again, group="prior"), free, atol=1e-10)
+    # A single (non-dict) pattern is one variable named `name`.
+    q = pg.SimplexArrayPattern(3)
+    d = pg.free_draws_to_arviz(q, free[..., :2], name="w")
+    np.testing.assert_allclose(pg.arviz_to_free_draws(q, d, name="w"), free[..., :2], atol=1e-10)

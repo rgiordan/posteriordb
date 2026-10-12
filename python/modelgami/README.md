@@ -95,7 +95,7 @@ Data shared across observations (sizes, design constants) go in `shared_data=`. 
 | `model.with_data(new_data)` | Same model, new data, no recompilation. |
 | `model.prior`, `model.likelihood` | The two pieces as `DGP` objects (log density + sampler). |
 | `model.capabilities` | What the model supports, for filtering models in a study. |
-| `model.to_arviz(draws)` | ArviZ export (posterior, pointwise log likelihood for `az.loo`, observed and constant data). |
+| `model.to_arviz(draws)` | ArviZ export (posterior, pointwise log likelihood for `az.loo`, observed and constant data). The parameter conversion is paragami's; `paragami.arviz_to_free_draws(model.params_pattern, idata)` reads draws back. |
 
 `modelgami.testing.check_model_contract(model)` checks that all of the above agree with each other. `assert_models_match(a, b)` compares two models.
 

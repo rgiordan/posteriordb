@@ -1,14 +1,15 @@
-"""Export draws from a `Model` to ArviZ (works with ArviZ >= 1.0 and the
-older 0.x `InferenceData` API)."""
+"""Export draws from a `Model` to ArviZ. The parameter conversion is
+paragami's (`paragami.folded_draws_to_arviz`); this adds the model's
+pointwise log likelihood and data."""
 
 from __future__ import annotations
 
-import inspect
 from typing import Any, Dict, Optional
 
 import jax
 import jax.numpy as jnp
 import numpy as np
+import paragami as pg
 
 
 def to_arviz(model, draws, params_as: str = "folded", *, log_likelihood: bool = True,
@@ -27,10 +28,8 @@ def to_arviz(model, draws, params_as: str = "folded", *, log_likelihood: bool = 
     dims, coords: ArviZ dims/coords for parameters and data. Observation
         fields of exchangeable data get the dimension `obs_dim`.
     """
-    import arviz as az
-
     posterior = _as_folded_draws(model, draws, params_as)
-    groups = {"posterior": _np(posterior)}
+    groups = {}
     dims = dict(dims or {})
     if model.exchangeable:
         for k in model.obs_keys:
@@ -46,22 +45,22 @@ def to_arviz(model, draws, params_as: str = "folded", *, log_likelihood: bool = 
         groups["observed_data"] = obs
         if const:
             groups["constant_data"] = const
-    for name, value in (("posterior_predictive", posterior_predictive), ("prior", prior), ("prior_predictive", prior_predictive)):
+    if prior is not None:
+        groups["prior"] = pg.folded_draws_to_variables(model.params_pattern, prior)
+    for name, value in (("posterior_predictive", posterior_predictive), ("prior_predictive", prior_predictive)):
         if value is not None:
             groups[name] = _np(value)
 
-    params = inspect.signature(az.from_dict).parameters
-    if "data" in params:  # ArviZ >= 1.0
-        return az.from_dict(groups, dims=dims, coords=coords)
-    return az.from_dict(**groups, dims=dims, coords=coords)  # ArviZ 0.x
+    return pg.folded_draws_to_arviz(model.params_pattern, posterior, dims=dims, coords=coords,
+                                    extra_groups=groups)
 
 
 def _as_folded_draws(model, draws, params_as):
     if params_as == "folded":
         return jax.tree_util.tree_map(jnp.asarray, draws)
-    draws = jnp.asarray(draws)
-    fold = lambda x: model.params_pattern.fold(x, from_free=(params_as == "free"), validate_value=False)
-    return jax.vmap(jax.vmap(fold))(draws)
+    if params_as == "free":
+        return pg.free_draws_to_folded(model.params_pattern, jnp.asarray(draws))
+    return pg.flat_draws_to_folded(model.params_pattern, jnp.asarray(draws))
 
 
 def _np(tree):
