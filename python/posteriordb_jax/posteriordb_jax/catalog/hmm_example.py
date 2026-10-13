@@ -14,13 +14,13 @@ The data have K = 2 (only two transition rows are defined). A plain Model:
 the forward recursion couples the observations (a `lax.scan`).
 """
 
-import jax
 import jax.numpy as jnp
 from jax.scipy import stats
-from jax.scipy.special import logsumexp
 
 import modelgami as mg
 import paragami as pg
+
+from ._hmm import forward_log_marginal
 
 STAN_MODEL = "hmm_example"
 POSTERIORS = ["hmm_example-hmm_example"]
@@ -35,13 +35,7 @@ def log_lik(params, data, hyper):
     mu = params["mu"]
     log_transition = jnp.log(jnp.stack([params["theta1"], params["theta2"]]))   # [from, to]
     log_emission = stats.norm.logpdf(data["y"][:, None], loc=mu[None, :], scale=1.0)   # (N, K)
-
-    def forward(gamma_prev, log_emission_t):
-        gamma_t = logsumexp(gamma_prev[:, None] + log_transition, axis=0) + log_emission_t
-        return gamma_t, None
-
-    gamma_last, _ = jax.lax.scan(forward, log_emission[0], log_emission[1:])
-    return logsumexp(gamma_last)
+    return forward_log_marginal(log_transition=log_transition, log_emission=log_emission)
 
 
 def build(raw):

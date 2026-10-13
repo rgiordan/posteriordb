@@ -14,13 +14,18 @@ from posteriordb_jax.testing import StanComparisonHarness, assert_model_matches_
 from modelgami.testing import check_model_contract
 
 NAMES = catalog.list_models()
+# Models translated after the old StatisticalModel versions were retired have
+# no old translation to compare against; BridgeStan still checks them.
+OLD_NAMES = [name for name in NAMES if catalog.module_for(name).STAN_MODEL in MODEL_REGISTRY]
 
 # Per-posterior exceptions to the BridgeStan comparison:
 # - Stan's bernoulli_logit_lpmf and bernoulli_logit_glm_lpmf switch to cutoff
 #   approximations for |logit| > 20 and, above the cutoff, return the partial
 #   -exp(-logit) instead of the exact exp(-logit) / (1 + exp(-logit)), an error
 #   of up to ~4e-9 per term, so their gradients get a looser bound. The log
-#   densities still agree to 1e-11.
+#   densities still agree to 1e-11. nn_rbm1bJ100's gradient entries are sums
+#   over the whole MNIST training set through 100 hidden units, and differ
+#   from Stan's by ~1e-9 from summation order alone.
 # - For the largest models the Hessian is skipped: jax.hessian is slow at
 #   thousands of free parameters, and BridgeStan's Hessian is finite
 #   differences of gradients, which is too noisy there to compare. The same
@@ -31,6 +36,18 @@ STAN_GRAD_ATOL = {
     "sat-hier_2pl": 1e-7,
     "ovarian-logistic_regression_rhs": 1e-7,
     "prostate-logistic_regression_rhs": 1e-7,
+    "fims_Aus_Jpn_irt-2pl_latent_reg_irt": 1e-7,
+    "mnist-nn_rbm1bJ100": 1e-8,
+}
+# Looser Hessian bounds where Hessian entries reach 1e4 to 4e5 (the hidden
+# Markov models' forward recursions): BridgeStan's finite-difference Hessian
+# is then off by up to ~1e-5 of the largest entry, and the bounds are set
+# from that relative error (checked against jax.hessian at random points).
+STAN_HESSIAN_ATOL = {
+    "bball_drive_event_0-hmm_drive_0": 0.1,
+    "bball_drive_event_1-hmm_drive_1": 2.0,
+    "hmm_gaussian_simulated-hmm_gaussian": 2.0,
+    "iohmm_reg_simulated-iohmm_reg": 0.5,
 }
 # Smaller synthetic free vectors where a standard normal one often lands where
 # Stan's density is -inf: GLMM_Poisson_model's beta2 is bounded to (-10, 20)
@@ -43,7 +60,7 @@ OLD_GRADIENT_NAN = {"dogs-dogs_hierarchical", "dogs-dogs_nonhierarchical"}
 NO_HESSIAN = {"GLMM_Poisson_data-GLMM_Poisson_model", "ovarian-logistic_regression_rhs", "prostate-logistic_regression_rhs",
               "traffic_accident_nyc-bym2_offset_only", "prideprejudice_chapter-ldaK5",
               "prideprejudice_paragraph-ldaK5", "three_docs1200-ldaK2", "three_men1-ldaK2",
-              "three_men2-ldaK2", "three_men3-ldaK2"}
+              "three_men2-ldaK2", "three_men3-ldaK2", "mnist_100-nn_rbm1bJ10", "mnist-nn_rbm1bJ100"}
 
 
 @pytest.mark.parametrize("name", NAMES)
@@ -51,7 +68,7 @@ def test_contract(name):
     check_model_contract(catalog.load(name))
 
 
-@pytest.mark.parametrize("name", NAMES)
+@pytest.mark.parametrize("name", OLD_NAMES)
 def test_matches_old_translation(name):
     """Same free vector, same log density and gradient as the existing
     (BridgeStan-verified) StatisticalModel version. The tolerance allows
@@ -90,7 +107,7 @@ def test_matches_stan(name):
                                        scale=SYNTHETIC_SCALE.get(name, 1.0))
     # Scaled errors (see assert_model_matches_stan). BridgeStan's Hessian is
     # finite differences of gradients, hence the looser Hessian bound.
-    report.assert_within(atol=STAN_GRAD_ATOL.get(name, 1e-9), atol_hessian=1e-4, atol_log_density=1e-11)
+    report.assert_within(atol=STAN_GRAD_ATOL.get(name, 1e-9), atol_hessian=STAN_HESSIAN_ATOL.get(name, 1e-4), atol_log_density=1e-11)
 
 
 def test_list_and_filter():
