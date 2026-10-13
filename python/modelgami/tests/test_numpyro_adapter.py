@@ -35,7 +35,7 @@ def test_same_model(models):
     # NumPyro orders sites as the program runs (sigma2 first); compare in folded space.
     assert set(npm.params_pattern.keys()) == {"beta", "sigma2"}
     for k in jax.random.split(jax.random.PRNGKey(1), 5):
-        p = hand.params_pattern.random(k)
+        p = hand.params_pattern.draw_random(k)
         np.testing.assert_allclose(npm.eval_log_prior(p), hand.eval_log_prior(p), rtol=1e-10)
         np.testing.assert_allclose(npm.eval_log_lik_singleobs(p), hand.eval_log_lik_singleobs(p), rtol=1e-10)
         x = npm.params_pattern.folded_to_free(p)
@@ -56,7 +56,7 @@ def test_contract_and_simulation(models):
 
 def test_hyper_and_data_derivatives(models):
     _, npm = models
-    x = jnp.zeros(npm.params_pattern.free_length())
+    x = jnp.zeros(npm.params_pattern.get_free_length())
     gh = jax.grad(lambda h: npm.eval_free_log_joint(x, hyper=h))(npm.hyper)
     assert np.all(np.isfinite(gh["V0"]))
     gd = jax.grad(lambda d: npm.eval_free_log_joint(x, data=d))(npm.data)

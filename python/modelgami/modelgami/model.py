@@ -53,7 +53,7 @@ class Model:
                 example = self.draw_prior(jax.random.PRNGKey(0))
             except NotImplementedError:
                 raise ValueError("give params_pattern, or a prior that can draw (to infer the pattern from)")
-            params_pattern = pg.unconstrained_pattern_like(example, default_name="params")
+            params_pattern = pg.make_unconstrained_pattern_like(example, default_name="params")
         self.params_pattern = params_pattern
 
     def _data(self, data):
@@ -103,7 +103,7 @@ class Model:
         return self.draw_joint(key, data, hyper)[1]
 
     def __repr__(self):
-        return f"<{type(self).__name__} {self.name}: free dimension {self.params_pattern.free_length()}>"
+        return f"<{type(self).__name__} {self.name}: free dimension {self.params_pattern.get_free_length()}>"
 
 
 class ExchangeableModel(Model):

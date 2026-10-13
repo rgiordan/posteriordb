@@ -20,7 +20,7 @@ def check_model_contract(model, key=None, n_draws: int = 3, rtol: float = 1e-8, 
     pattern = model.params_pattern
     eval_free = jax.jit(model.eval_free_log_joint)
     for k in jax.random.split(key, n_draws):
-        x = 0.5 * jax.random.normal(k, (pattern.free_length(),))
+        x = 0.5 * jax.random.normal(k, (pattern.get_free_length(),))
         params, log_det = pattern.free_to_folded_with_log_det(x)
         np.testing.assert_allclose(pattern.folded_to_free(params), x, rtol=1e-6, atol=1e-8)
         _close(eval_free(x), model.eval_log_joint(params) + log_det, rtol=rtol, atol=atol,
@@ -42,7 +42,7 @@ def check_model_contract(model, key=None, n_draws: int = 3, rtol: float = 1e-8, 
         ok, msg = pattern.validate_folded(params)
         assert ok, f"prior draw: {msg}"
     except NotImplementedError:
-        params = pattern.random(key)
+        params = pattern.draw_random(key)
     try:
         model.draw_data(key, params)
     except NotImplementedError:
@@ -54,8 +54,8 @@ def assert_models_match(a, b, n_draws: int = 10, key=None, rtol: float = 1e-8, a
                         check_grad: bool = True):
     """Two models with the same free parameterization give the same free
     log joint density (and gradient)."""
-    dim = a.params_pattern.free_length()
-    assert dim == b.params_pattern.free_length(), "free dimensions differ"
+    dim = a.params_pattern.get_free_length()
+    assert dim == b.params_pattern.get_free_length(), "free dimensions differ"
     key = jax.random.PRNGKey(0) if key is None else key
     for k in jax.random.split(key, n_draws):
         x = jax.random.normal(k, (dim,))

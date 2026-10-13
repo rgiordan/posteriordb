@@ -141,10 +141,10 @@ class StanParamsPattern(pg.Pattern):
         self._shapes = _shapes_from_names(self._stan_names)
         super().__init__(flat_length=len(self._stan_names), free_length=bs.param_unc_num())
 
-    def as_dict(self):
+    def to_dict(self):
         return {"stan_model": self._bs.name(), "shapes": self._shapes}
 
-    def code_to_generate(self, *, module: str = "pg", indent: int = 4) -> str:
+    def generate_code(self, *, module: str = "pg", indent: int = 4) -> str:
         raise NotImplementedError("a StanParamsPattern is built from a BridgeStan model: "
                                   "use modelgami.from_bridgestan")
 

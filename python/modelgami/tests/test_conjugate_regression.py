@@ -29,7 +29,7 @@ def setup():
 def test_contract(setup):
     _, _, model = setup
     assert check_model_contract(model)
-    assert model.n_obs == 50 and model.params_pattern.free_length() == 4
+    assert model.n_obs == 50 and model.params_pattern.get_free_length() == 4
 
 
 def test_joint_equals_exact_posterior_plus_evidence(setup):
@@ -37,7 +37,7 @@ def test_joint_equals_exact_posterior_plus_evidence(setup):
     X, y, model = setup
     log_evidence = cr.eval_log_marginal_likelihood(X, y, model.hyper)
     for k in jax.random.split(jax.random.PRNGKey(1), 5):
-        params = model.params_pattern.random(k)
+        params = model.params_pattern.draw_random(k)
         diff = model.eval_log_joint(params) - cr.eval_exact_log_posterior(params, X, y, model.hyper)
         np.testing.assert_allclose(diff, log_evidence, rtol=1e-10)
 
@@ -50,7 +50,7 @@ def test_posterior_mode_by_optimization(setup):
     f = jax.jit(lambda u: model.eval_log_joint(pattern.free_to_folded(u)))
     g = jax.jit(jax.grad(f))
     h = jax.jit(jax.hessian(f))
-    x = jnp.zeros(pattern.free_length())
+    x = jnp.zeros(pattern.get_free_length())
     for _ in range(100):  # damped Newton (gradient step where the Hessian isn't negative definite)
         H = h(x)
         step = -jnp.linalg.solve(H, g(x)) if np.all(np.linalg.eigvalsh(H) < 0) else 0.01 * g(x)
@@ -71,12 +71,12 @@ def test_free_and_folded_dgp(setup):
     _, _, model = setup
     pattern = model.params_pattern
     free_prior = mg.free_dgp(model.prior, pattern)
-    u = jax.random.normal(jax.random.PRNGKey(2), (pattern.free_length(),))
+    u = jax.random.normal(jax.random.PRNGKey(2), (pattern.get_free_length(),))
     params, log_det = pattern.free_to_folded_with_log_det(u)
     np.testing.assert_allclose(free_prior.eval_log_density(u, model.hyper),
                                model.eval_log_prior(params) + log_det, rtol=1e-12)
     draw = free_prior.draw(jax.random.PRNGKey(3), model.hyper)
-    assert draw.shape == (pattern.free_length(),)
+    assert draw.shape == (pattern.get_free_length(),)
     back = mg.folded_dgp(free_prior, pattern)
     np.testing.assert_allclose(back.eval_log_density(params, model.hyper), model.eval_log_prior(params), rtol=1e-10)
     np.testing.assert_allclose(back.draw(jax.random.PRNGKey(3), model.hyper)["sigma2"],
@@ -105,7 +105,7 @@ def test_general_model_matches_exchangeable(setup):
                      data=model.data, hyper=model.hyper)
     assert_models_match(model, other)
     with pytest.raises(NotImplementedError):
-        other.draw_data(jax.random.PRNGKey(0), model.params_pattern.random(jax.random.PRNGKey(1)))
+        other.draw_data(jax.random.PRNGKey(0), model.params_pattern.draw_random(jax.random.PRNGKey(1)))
 
 
 def test_inferred_params_pattern(setup):
@@ -113,9 +113,9 @@ def test_inferred_params_pattern(setup):
     _, _, model = setup
     inferred = mg.ExchangeableModel(prior=model.prior, likelihood=model.likelihood, data=model.data,
                                     hyper=model.hyper)
-    assert inferred.params_pattern == pg.unconstrained_pattern_like(model.draw_prior(jax.random.PRNGKey(0)),
+    assert inferred.params_pattern == pg.make_unconstrained_pattern_like(model.draw_prior(jax.random.PRNGKey(0)),
                                                                      default_name="params")
-    assert inferred.params_pattern.free_length() == 4
+    assert inferred.params_pattern.get_free_length() == 4
     with pytest.raises(ValueError):
         mg.ExchangeableModel(likelihood=model.likelihood, data=model.data)  # flat prior cannot draw
 
@@ -124,7 +124,7 @@ def test_missing_pieces_raise(setup):
     _, _, model = setup
     no_prior = mg.ExchangeableModel(params_pattern=model.params_pattern,
                                     likelihood=mg.ExchangeableDGP(cr.eval_log_lik_one), data=model.data)
-    params = model.params_pattern.random(jax.random.PRNGKey(0))
+    params = model.params_pattern.draw_random(jax.random.PRNGKey(0))
     assert no_prior.eval_log_prior(params) == 0.0  # flat prior
     for draw in (lambda: no_prior.draw_prior(jax.random.PRNGKey(0)),
                  lambda: no_prior.draw_data(jax.random.PRNGKey(0), params),
@@ -138,7 +138,7 @@ def test_missing_pieces_raise(setup):
 
 def test_weights_subsets_and_bootstrap(setup):
     X, y, model = setup
-    params = model.params_pattern.random(jax.random.PRNGKey(2))
+    params = model.params_pattern.draw_random(jax.random.PRNGKey(2))
     singleobs = model.eval_log_lik_singleobs(params)
     prior = model.eval_log_prior(params)
     w = jnp.zeros(model.n_obs).at[:10].set(1.0)
@@ -162,7 +162,7 @@ def test_weights_subsets_and_bootstrap(setup):
 
 def test_derivatives_wrt_data_and_hyper(setup):
     X, y, model = setup
-    x = jnp.zeros(model.params_pattern.free_length())
+    x = jnp.zeros(model.params_pattern.get_free_length())
     # Derivatives with respect to data, through a paragami pattern for one datum.
     datum_pattern = pg.PatternDict(x=pg.NumericVectorPattern(3), y=pg.NumericScalarPattern())
     flat = jax.vmap(datum_pattern.folded_to_flat)(model.data)
@@ -189,7 +189,7 @@ def test_draws(setup):
 def test_hvp(setup):
     _, _, model = setup
     f = model.eval_free_log_joint
-    n = model.params_pattern.free_length()
+    n = model.params_pattern.get_free_length()
     x, v = jnp.ones(n) * 0.1, jnp.arange(n, dtype=float)
     np.testing.assert_allclose(mg.make_hvp(f)(x, v), jax.hessian(f)(x) @ v, rtol=1e-8)
 
@@ -214,7 +214,7 @@ def _check_distributions_likelihood(model, make_dists_one):
                                  likelihood=mg.exchangeable_dgp_from_distributions(make_dists_one),
                                  data=model.data, hyper=model.hyper)
     assert_models_match(model, other)
-    p = model.params_pattern.random(jax.random.PRNGKey(7))
+    p = model.params_pattern.draw_random(jax.random.PRNGKey(7))
     d = other.draw_data(jax.random.PRNGKey(8), p)
     assert d["y"].shape == model.data["y"].shape and not np.allclose(d["y"], model.data["y"])
     check_model_contract(other)
