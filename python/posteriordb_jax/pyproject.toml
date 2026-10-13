@@ -19,6 +19,8 @@ dependencies = [
 # (which needs jax <= 0.5); the catalog of modelgami models needs neither.
 legacy = ["tensorflow-probability"]
 stan = ["bridgestan"]
+# The ready-made MCMC analyses of posteriordb_jax.batch.
+mcmc = ["blackjax"]
 test = ["pytest", "tensorflow-probability", "bridgestan"]
 
 [tool.setuptools.packages.find]

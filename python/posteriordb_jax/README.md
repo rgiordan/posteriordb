@@ -32,6 +32,32 @@ Converted so far (116 Stan models, 143 posteriors): `2pl_latent_reg_irt`, `accel
 
 Every model in `posteriordb_jax/models/` now has a catalog version; the old translations stay as the reference for `test_matches_old_translation`. Models posteriordb has that never had an old translation are checked against BridgeStan only. garch11's beta1 has an upper bound that depends on alpha1, so its file defines a small custom `Garch11Pattern`. Still missing: the four ODE models (lotka_volterra, one_comp_mm_elim_abs, sir, soil_incubation), which need an ODE solver.
 
+## Running an analysis on every posterior (Slurm)
+
+`posteriordb_jax.batch` runs one analysis on many posteriors, in this process or as a Slurm array job with one task per posterior. An analysis is any function `analysis(entry, out_dir)`: it gets an `Entry` (the posterior's name, its modelgami `model`, posteriordb's metadata and `reference_draws()`) and writes its results into `out_dir`. Bind options with `functools.partial` in your own file and name it as `file.py:function` or `module:function`:
+
+```python
+# my_analyses.py
+from functools import partial
+from posteriordb_jax.batch import analyses
+
+mcmc = partial(analyses.mcmc, n_warmup=1000, n_draws=1000)
+bootstrap = partial(analyses.bootstrap_mcmc, weights=partial(analyses.multinomial_weights, n_replicates=20))
+```
+
+```bash
+python -m posteriordb_jax.batch local  --analysis my_analyses.py:mcmc --out results/mcmc --posteriors kidiq-kidscore_momiq
+python -m posteriordb_jax.batch submit --analysis my_analyses.py:mcmc --out results/mcmc --time 04:00:00 --mem 16G \
+    --setup "source ~/venvs/posteriordb/bin/activate"
+python -m posteriordb_jax.batch submit --analysis my_analyses.py:bootstrap --out results/boot --exchangeable
+python -m posteriordb_jax.batch status --out results/mcmc --verbose
+```
+
+- Results go to `<out>/<posterior>/`, with a `status.json` recording "done", "failed" (with the traceback) or "not_applicable" (the analysis raised `NotApplicable`, e.g. a bootstrap of non-exchangeable data). Finished posteriors are skipped on later runs, so resubmitting reruns only the rest; `--overwrite` reruns everything.
+- `analyses.mcmc` runs NUTS (BlackJAX, `pip install -e ".[mcmc]"`) and writes `draws.npz` and `summary.json`, including the largest discrepancy from posteriordb's reference means where those exist. `analyses.bootstrap_mcmc` runs NUTS once per row of weights that your function returns for each posterior (shape `(n_obs,)` or `(n_replicates, n_obs)`), compiling the sampler once.
+- Select posteriors with `--posteriors`, `--exchangeable`, `--with-reference-draws` and `--only-unfinished`; see `python -m posteriordb_jax.batch submit --help` for the Slurm options. `examples/batch_analyses.py` has more examples, including custom weights and a custom analysis.
+
+
 ```python
 from posteriordb_jax import catalog
 
