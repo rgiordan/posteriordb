@@ -1,0 +1,13 @@
+# Local packages from this repository (editable, so notebook edits pick up code changes).
+-e ../paragami
+-e ../modelgami
+-e ../posteriordb_jax
+
+jax
+numpyro
+blackjax
+arviz
+matplotlib
+ipykernel
+jupyter
+nbconvert

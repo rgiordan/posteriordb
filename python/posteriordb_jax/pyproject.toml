@@ -9,13 +9,22 @@ description = "JAX/TensorFlow Probability translations of posteriordb Stan model
 requires-python = ">=3.10"
 dependencies = [
     "jax",
-    "tensorflow-probability",
-    "bridgestan",
     "numpy",
+    "paragami",
+    "modelgami",
 ]
 
 [project.optional-dependencies]
-test = ["pytest"]
+# The original translations in posteriordb_jax.models use TensorFlow Probability
+# (which needs jax <= 0.5); the catalog of modelgami models needs neither.
+legacy = ["tensorflow-probability"]
+stan = ["bridgestan"]
+# The ready-made MCMC analyses of posteriordb_jax.batch.
+mcmc = ["blackjax"]
+test = ["pytest", "tensorflow-probability", "bridgestan"]
 
 [tool.setuptools.packages.find]
 include = ["posteriordb_jax*"]
+
+[tool.pytest.ini_options]
+markers = ["stan: compiles a Stan model with BridgeStan (slow; deselect with -m 'not stan')"]

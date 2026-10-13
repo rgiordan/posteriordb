@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paragami"
+version = "1.0.0.dev0"
+description = "Parameter origami in JAX: fold and flatten structured, constrained parameters to and from (unconstrained) vectors."
+requires-python = ">=3.10"
+dependencies = ["jax", "numpy"]
+
+[project.optional-dependencies]
+arviz = ["arviz"]
+test = ["pytest", "arviz"]
+
+[tool.setuptools.packages.find]
+include = ["paragami*"]
+
+[tool.pytest.ini_options]
+markers = ["stan: compiles a Stan model with BridgeStan (slow; deselect with -m 'not stan')"]

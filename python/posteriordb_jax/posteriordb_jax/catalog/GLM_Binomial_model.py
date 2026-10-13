@@ -1,0 +1,51 @@
+"""GLM_Binomial_model.stan:
+
+    parameters { real alpha; real beta1; real beta2; }
+    transformed parameters { logit_p = alpha + beta1 * year + beta2 * year .* year; }
+    model {
+      alpha ~ normal(0, 100); beta1 ~ normal(0, 100); beta2 ~ normal(0, 100);
+      C ~ binomial_logit(N, logit_p);
+    }
+"""
+
+import jax
+import jax.numpy as jnp
+from jax.scipy import stats
+
+import modelgami as mg
+import paragami as pg
+
+from ._distributions import eval_binomial_logit_logpmf
+
+STAN_MODEL = "GLM_Binomial_model"
+POSTERIORS = ["GLM_Binomial_data-GLM_Binomial_model"]
+
+
+def eval_log_prior(params, hyper):
+    return (stats.norm.logpdf(params["alpha"], loc=0.0, scale=100.0)
+            + stats.norm.logpdf(params["beta1"], loc=0.0, scale=100.0)
+            + stats.norm.logpdf(params["beta2"], loc=0.0, scale=100.0))
+
+
+def compute_logit_p(params, datum):
+    return params["alpha"] + params["beta1"] * datum["year"] + params["beta2"] * datum["year"] ** 2
+
+
+def eval_log_lik_one(datum, params, hyper):
+    return eval_binomial_logit_logpmf(datum["C"], n=datum["N"], logit_p=compute_logit_p(params=params, datum=datum))
+
+
+def draw_one(key, datum, params, hyper):
+    p = jax.nn.sigmoid(compute_logit_p(params=params, datum=datum))
+    return {"C": jax.random.binomial(key, n=datum["N"], p=p).astype(datum["C"].dtype)}
+
+
+def build(raw):
+    return mg.ExchangeableModel(
+        name=STAN_MODEL,
+        params_pattern=pg.PatternDict(
+            alpha=pg.NumericScalarPattern(), beta1=pg.NumericScalarPattern(), beta2=pg.NumericScalarPattern()),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
+        data={"C": jnp.asarray(raw["C"], dtype=jnp.int32), "N": jnp.asarray(raw["N"], dtype=jnp.int32), "year": raw["year"]},
+    )
