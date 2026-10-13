@@ -26,11 +26,18 @@ NAMES = catalog.list_models()
 #   differences of gradients, which is too noisy there to compare.
 STAN_GRAD_ATOL = {
     "irt_2pl-irt_2pl": 1e-7,
+    "sat-hier_2pl": 1e-7,
     "ovarian-logistic_regression_rhs": 1e-7,
     "prostate-logistic_regression_rhs": 1e-7,
 }
+# The old translations of these give nan gradients: p is exactly 1 on each
+# dog's first trial, and their Bernoulli log density differentiates log(1 - p)
+# there. The new versions' gradients match Stan (test_matches_stan).
+OLD_GRADIENT_NAN = {"dogs-dogs_hierarchical", "dogs-dogs_nonhierarchical"}
 NO_HESSIAN = {"ovarian-logistic_regression_rhs", "prostate-logistic_regression_rhs",
-              "traffic_accident_nyc-bym2_offset_only"}
+              "traffic_accident_nyc-bym2_offset_only", "prideprejudice_chapter-ldaK5",
+              "prideprejudice_paragraph-ldaK5", "three_docs1200-ldaK2", "three_men1-ldaK2",
+              "three_men2-ldaK2", "three_men3-ldaK2"}
 
 
 @pytest.mark.parametrize("name", NAMES)
@@ -63,7 +70,8 @@ def test_matches_old_translation(name):
     for k in jax.random.split(jax.random.PRNGKey(0), 5):
         x = jax.random.normal(k, (model.params_pattern.free_length(),))
         np.testing.assert_allclose(f(x), old.log_prob_unconstrained(x), rtol=1e-8, atol=1e-5)
-        np.testing.assert_allclose(jax.grad(f)(x), old.grad_unconstrained(x), rtol=1e-7, atol=1e-6)
+        if name not in OLD_GRADIENT_NAN:
+            np.testing.assert_allclose(jax.grad(f)(x), old.grad_unconstrained(x), rtol=1e-7, atol=1e-6)
 
 
 @pytest.mark.stan
