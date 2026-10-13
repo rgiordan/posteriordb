@@ -15,17 +15,17 @@ A plain Model: the forward recursion couples the observations.
 
 from jax.scipy import stats
 
-from ._hmm_drive import drive_model, log_lik_from_emission
+from ._hmm_drive import build_drive_model, eval_log_lik_from_emission
 
 STAN_MODEL = "hmm_drive_0"
 POSTERIORS = ["bball_drive_event_0-hmm_drive_0"]
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     log_emission = (stats.expon.logpdf(data["u"][:, None], scale=1.0 / params["phi"][None, :])
                     + stats.expon.logpdf(data["v"][:, None], scale=1.0 / params["lambda"][None, :]))
-    return log_lik_from_emission(params=params, log_emission=log_emission)
+    return eval_log_lik_from_emission(params=params, log_emission=log_emission)
 
 
 def build(raw):
-    return drive_model(name=STAN_MODEL, raw=raw, log_lik=log_lik, positive=True, hyper={})
+    return build_drive_model(name=STAN_MODEL, raw=raw, eval_log_lik=eval_log_lik, positive=True, hyper={})

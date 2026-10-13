@@ -35,10 +35,10 @@ class Garch11Pattern(pg.Pattern):
     def __init__(self):
         super().__init__(flat_length=4, free_length=4)
 
-    def as_dict(self):
+    def to_dict(self):
         return {}
 
-    def code_to_generate(self, *, module="pg", indent=4):
+    def generate_code(self, *, module="pg", indent=4):
         raise NotImplementedError("Garch11Pattern is defined in posteriordb_jax.catalog.garch11")
 
     def _names(self, free):
@@ -84,7 +84,7 @@ class Garch11Pattern(pg.Pattern):
         return None
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     y, mu = data["y"], params["mu"]
 
     def step(sigma_prev, y_prev):
@@ -101,7 +101,7 @@ def build(raw):
         name=STAN_MODEL,
         params_pattern=Garch11Pattern(),
         prior=None,
-        likelihood=mg.DGP(log_density=log_lik),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={"y": raw["y"]},
         hyper={"sigma1": raw["sigma1"]},
     )

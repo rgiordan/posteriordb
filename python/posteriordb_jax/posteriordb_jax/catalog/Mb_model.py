@@ -24,20 +24,20 @@ import jax.numpy as jnp
 import modelgami as mg
 import paragami as pg
 
-from ._capture import bernoulli_log_lik, log_lik_augmented
+from ._capture import eval_bernoulli_log_lik, eval_log_lik_augmented
 
 STAN_MODEL = "Mb_model"
 POSTERIORS = ["Mb_data-Mb_model"]
 
 
-def p_eff(params, y):
+def compute_p_eff(params, y):
     previous = jnp.concatenate([jnp.zeros(1, dtype=y.dtype), y[:-1]])
     return (1 - previous) * params["p"] + previous * params["c"]
 
 
-def log_lik_one(params, datum, hyper):
-    captures = bernoulli_log_lik(y=datum["y"], p=p_eff(params=params, y=datum["y"]))
-    return log_lik_augmented(omega=params["omega"], log_lik_captures=captures, captured=jnp.sum(datum["y"]) > 0)
+def eval_log_lik_one(datum, params, hyper):
+    captures = eval_bernoulli_log_lik(y=datum["y"], p=compute_p_eff(params=params, y=datum["y"]))
+    return eval_log_lik_augmented(omega=params["omega"], log_lik_captures=captures, captured=jnp.sum(datum["y"]) > 0)
 
 
 def build(raw):
@@ -48,6 +48,6 @@ def build(raw):
             p=pg.NumericScalarPattern(lb=0.0, ub=1.0),
             c=pg.NumericScalarPattern(lb=0.0, ub=1.0),
         ),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one),
         data={"y": jnp.asarray(raw["y"], dtype=jnp.int32)},
     )

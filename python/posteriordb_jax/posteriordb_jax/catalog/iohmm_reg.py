@@ -29,13 +29,13 @@ STAN_MODEL = "iohmm_reg"
 POSTERIORS = ["iohmm_reg_simulated-iohmm_reg"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (jnp.sum(stats.norm.logpdf(params["w"], loc=0.0, scale=5.0))
             + jnp.sum(stats.norm.logpdf(params["b"], loc=0.0, scale=5.0))
             + jnp.sum(stats.norm.logpdf(params["sigma"], loc=0.0, scale=3.0)))
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     u = data["u"]
     log_a = jax.nn.log_softmax(u @ params["w"].T, axis=1)   # (T, K); row 1 unused
     log_oblik = stats.norm.logpdf(data["y"][:, None], loc=u @ params["b"].T, scale=params["sigma"][None, :])
@@ -58,7 +58,7 @@ def build(raw):
             b=pg.NumericArrayPattern((k, m)),
             sigma=pg.NumericVectorPattern(k, lb=0.0),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={"y": raw["y"], "u": raw["u"]},
     )

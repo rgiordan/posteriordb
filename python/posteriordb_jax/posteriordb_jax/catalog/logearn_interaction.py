@@ -5,23 +5,23 @@
 
 import jax.numpy as jnp
 
-from ._regression import normal_regression, ones_and
+from ._regression import build_normal_regression, prepend_ones
 
 STAN_MODEL = "logearn_interaction"
 POSTERIORS = ["earnings-logearn_interaction"]
 
 
-def features(d, hyper):
-    return ones_and(d["height"], d["male"], d["height"] * d["male"])
+def compute_features(d, hyper):
+    return prepend_ones(d["height"], d["male"], d["height"] * d["male"])
 
 
 def build(raw):
-    return normal_regression(
+    return build_normal_regression(
         name=STAN_MODEL,
         data={"earn": raw["earn"], "height": raw["height"], "male": raw["male"]},
         n_features=4,
-        features=features,
-        response=lambda d: jnp.log(d["earn"]),
+        compute_features=compute_features,
+        compute_response=lambda d: jnp.log(d["earn"]),
         response_field="earn",
-        inverse_response=jnp.exp,
+        invert_response=jnp.exp,
     )

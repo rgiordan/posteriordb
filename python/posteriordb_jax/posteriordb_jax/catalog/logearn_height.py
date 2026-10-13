@@ -15,7 +15,7 @@ STAN_MODEL = "logearn_height"
 POSTERIORS = ["earnings-logearn_height"]
 
 
-def log_lik_one(params, datum, hyper):
+def eval_log_lik_one(datum, params, hyper):
     mean = params["beta"][0] + params["beta"][1] * datum["height"]
     return stats.norm.logpdf(jnp.log(datum["earn"]), loc=mean, scale=params["sigma"])
 
@@ -25,5 +25,5 @@ def build(raw):
         name=STAN_MODEL,
         params_pattern=pg.PatternDict(beta=pg.NumericVectorPattern(2), sigma=pg.NumericScalarPattern(lb=0.0)),
         data={"earn": raw["earn"], "height": raw["height"]},
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one),
     )

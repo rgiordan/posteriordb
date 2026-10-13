@@ -20,22 +20,22 @@ from jax.scipy import stats
 import modelgami as mg
 import paragami as pg
 
-from ._hmm import forward_log_marginal
+from ._hmm import eval_forward_log_marginal
 
 STAN_MODEL = "hmm_example"
 POSTERIORS = ["hmm_example-hmm_example"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     mu = params["mu"]
     return stats.norm.logpdf(mu[0], loc=3.0, scale=1.0) + stats.norm.logpdf(mu[1], loc=10.0, scale=1.0)
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     mu = params["mu"]
     log_transition = jnp.log(jnp.stack([params["theta1"], params["theta2"]]))   # [from, to]
     log_emission = stats.norm.logpdf(data["y"][:, None], loc=mu[None, :], scale=1.0)   # (N, K)
-    return forward_log_marginal(log_transition=log_transition, log_emission=log_emission)
+    return eval_forward_log_marginal(log_transition=log_transition, log_emission=log_emission)
 
 
 def build(raw):
@@ -47,7 +47,7 @@ def build(raw):
             theta2=pg.SimplexArrayPattern(k),
             mu=pg.OrderedVectorPattern(k, positive=True),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={"y": raw["y"]},
     )

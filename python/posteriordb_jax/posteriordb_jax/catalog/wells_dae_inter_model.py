@@ -20,13 +20,13 @@ keep the full-data centering.
 import jax.numpy as jnp
 import numpy as np
 
-from ._regression import logistic_regression
+from ._regression import build_logistic_regression
 
 STAN_MODEL = "wells_dae_inter_model"
 POSTERIORS = ["wells_data-wells_dae_inter_model"]
 
 
-def features(d, hyper):
+def compute_features(d, hyper):
     c_dist100 = (d["dist"] - hyper["dist_mean"]) / 100.0
     c_arsenic = d["arsenic"] - hyper["arsenic_mean"]
     c_educ4 = (d["educ"] - hyper["educ_mean"]) / 4.0
@@ -34,11 +34,11 @@ def features(d, hyper):
 
 
 def build(raw):
-    return logistic_regression(
+    return build_logistic_regression(
         name=STAN_MODEL,
         data={"switched": raw["switched"], "dist": raw["dist"], "arsenic": raw["arsenic"], "educ": raw["educ"]},
         hyper={"dist_mean": float(np.mean(raw["dist"])), "arsenic_mean": float(np.mean(raw["arsenic"])), "educ_mean": float(np.mean(raw["educ"]))},
         n_features=6,
-        features=features,
+        compute_features=compute_features,
         response_field="switched",
     )

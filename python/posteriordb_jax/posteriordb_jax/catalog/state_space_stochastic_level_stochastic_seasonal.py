@@ -27,7 +27,7 @@ STAN_MODEL = "state_space_stochastic_level_stochastic_seasonal"
 POSTERIORS = ["uk_drivers-state_space_stochastic_level_stochastic_seasonal"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     seasonal, mu, sigma = params["seasonal"], params["mu"], params["sigma"]
     n = seasonal.shape[0]
     # sum of the 11 previous seasonal terms, for t = 12..n (1-based)
@@ -37,7 +37,7 @@ def log_prior(params, hyper):
             + jnp.sum(stats.t.logpdf(sigma, df=4.0, loc=0.0, scale=1.0)))
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     yhat = params["mu"] + params["beta"] * data["x"] + params["lambda"] * data["w"]
     return jnp.sum(stats.norm.logpdf(data["y"], loc=yhat + params["seasonal"], scale=params["sigma"][2]))
 
@@ -56,7 +56,7 @@ def build(raw):
             **{"lambda": pg.NumericScalarPattern()},
             sigma=pg.OrderedVectorPattern(3, positive=True),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={"y": raw["y"], "x": raw["x"], "w": raw["w"]},
     )

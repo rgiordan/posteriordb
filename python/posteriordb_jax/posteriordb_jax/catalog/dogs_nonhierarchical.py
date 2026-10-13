@@ -27,27 +27,27 @@ from jax.scipy import stats
 import modelgami as mg
 import paragami as pg
 
-from ._distributions import lkj_corr_cholesky_logpdf
-from ._dogs import bernoulli_log_lik, previous_counts
+from ._distributions import eval_lkj_corr_cholesky_logpdf
+from ._dogs import eval_bernoulli_log_lik, count_previous
 
 STAN_MODEL = "dogs_nonhierarchical"
 POSTERIORS = ["dogs-dogs_nonhierarchical"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (jnp.sum(stats.logistic.logpdf(params["mu_logit_ab"], loc=0.0, scale=1.0))
             + jnp.sum(stats.norm.logpdf(params["sigma_logit_ab"], loc=0.0, scale=1.0))
-            + lkj_corr_cholesky_logpdf(params["L_logit_ab"], eta=2.0)
+            + eval_lkj_corr_cholesky_logpdf(params["L_logit_ab"], eta=2.0)
             + jnp.sum(stats.norm.logpdf(params["z"], loc=0.0, scale=1.0)))
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     scale = params["sigma_logit_ab"][:, None] * params["L_logit_ab"]   # diag_pre_multiply
     logit_ab = params["mu_logit_ab"][None, :] + params["z"] @ scale
     a, b = jax.nn.sigmoid(logit_ab[:, 0]), jax.nn.sigmoid(logit_ab[:, 1])
-    shocks, avoids = previous_counts(data["y"])
+    shocks, avoids = count_previous(data["y"])
     p = a[:, None] ** shocks * b[:, None] ** avoids
-    return jnp.sum(bernoulli_log_lik(y=data["y"], p=p))
+    return jnp.sum(eval_bernoulli_log_lik(y=data["y"], p=p))
 
 
 def build(raw):
@@ -60,7 +60,7 @@ def build(raw):
             L_logit_ab=pg.CholeskyCorrPattern(2),
             z=pg.NumericArrayPattern((j, 2), order="F"),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={"y": jnp.asarray(raw["y"], dtype=jnp.int32)},
     )

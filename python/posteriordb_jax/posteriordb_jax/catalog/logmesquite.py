@@ -6,14 +6,14 @@
 
 import jax.numpy as jnp
 
-from ._regression import normal_regression, ones_and
+from ._regression import build_normal_regression, prepend_ones
 
 STAN_MODEL = "logmesquite"
 POSTERIORS = ["mesquite-logmesquite"]
 
 
-def features(d, hyper):
-    return ones_and(
+def compute_features(d, hyper):
+    return prepend_ones(
         jnp.log(d["diam1"]),
         jnp.log(d["diam2"]),
         jnp.log(d["canopy_height"]),
@@ -24,12 +24,12 @@ def features(d, hyper):
 
 
 def build(raw):
-    return normal_regression(
+    return build_normal_regression(
         name=STAN_MODEL,
         data={"weight": raw["weight"], "diam1": raw["diam1"], "diam2": raw["diam2"], "canopy_height": raw["canopy_height"], "total_height": raw["total_height"], "density": raw["density"], "group": raw["group"]},
         n_features=7,
-        features=features,
-        response=lambda d: jnp.log(d["weight"]),
+        compute_features=compute_features,
+        compute_response=lambda d: jnp.log(d["weight"]),
         response_field="weight",
-        inverse_response=jnp.exp,
+        invert_response=jnp.exp,
     )

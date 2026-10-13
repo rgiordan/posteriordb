@@ -3,26 +3,26 @@
     earn ~ normal(beta[1] + beta[2] * height, sigma)
 """
 
-from ._regression import normal_regression, ones_and
+from ._regression import build_normal_regression, prepend_ones
 
 STAN_MODEL = "earn_height"
 POSTERIORS = ['earnings-earn_height']
 
 
-def features(d, hyper):
-    return ones_and(d["height"])
+def compute_features(d, hyper):
+    return prepend_ones(d["height"])
 
 
-def response(d):
+def compute_response(d):
     return d["earn"]
 
 
 def build(raw):
-    return normal_regression(
+    return build_normal_regression(
         name=STAN_MODEL,
         data={"earn": raw["earn"], "height": raw["height"]},
         n_features=2,
-        features=features,
-        response=response,
+        compute_features=compute_features,
+        compute_response=compute_response,
         response_field="earn",
     )

@@ -27,24 +27,24 @@ STAN_MODEL = "rats_model"
 POSTERIORS = ["rats_data-rats_model"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (stats.norm.logpdf(params["mu_alpha"], loc=0.0, scale=100.0)
             + stats.norm.logpdf(params["mu_beta"], loc=0.0, scale=100.0)
             + jnp.sum(stats.norm.logpdf(params["alpha"], loc=params["mu_alpha"], scale=params["sigma_alpha"]))
             + jnp.sum(stats.norm.logpdf(params["beta"], loc=params["mu_beta"], scale=params["sigma_beta"])))
 
 
-def mean(params, datum, hyper):
+def compute_mean(params, datum, hyper):
     r = datum["rat"] - 1
     return params["alpha"][r] + params["beta"][r] * (datum["x"] - hyper["xbar"])
 
 
-def log_lik_one(params, datum, hyper):
-    return stats.norm.logpdf(datum["y"], loc=mean(params=params, datum=datum, hyper=hyper), scale=params["sigma_y"])
+def eval_log_lik_one(datum, params, hyper):
+    return stats.norm.logpdf(datum["y"], loc=compute_mean(params=params, datum=datum, hyper=hyper), scale=params["sigma_y"])
 
 
-def sample_one(key, params, datum, hyper):
-    return {"y": mean(params=params, datum=datum, hyper=hyper) + params["sigma_y"] * jax.random.normal(key)}
+def draw_one(key, datum, params, hyper):
+    return {"y": compute_mean(params=params, datum=datum, hyper=hyper) + params["sigma_y"] * jax.random.normal(key)}
 
 
 def build(raw):
@@ -60,8 +60,8 @@ def build(raw):
             sigma_alpha=pg.NumericScalarPattern(lb=0.0),
             sigma_beta=pg.NumericScalarPattern(lb=0.0),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
         data={"rat": jnp.asarray(raw["rat"], dtype=jnp.int32), "x": raw["x"], "y": raw["y"]},
         hyper={"xbar": float(raw["xbar"])},
     )

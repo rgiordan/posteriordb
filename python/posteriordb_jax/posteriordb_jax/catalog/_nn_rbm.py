@@ -31,36 +31,36 @@ from jax.scipy.special import logsumexp
 import modelgami as mg
 import paragami as pg
 
-from ._distributions import inv_gamma_logpdf
+from ._distributions import eval_inv_gamma_logpdf
 
 NU = 0.5
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (jnp.sum(stats.norm.logpdf(params["alpha1"], loc=0.0, scale=1.0))
             + jnp.sum(stats.norm.logpdf(params["beta1"], loc=0.0, scale=1.0))
-            + inv_gamma_logpdf(params["sigma2_alpha"], a=NU / 2.0, b=NU * hyper["s2_0_alpha"] / 2.0)
-            + inv_gamma_logpdf(params["sigma2_beta"], a=NU / 2.0, b=NU * hyper["s2_0_beta"] / 2.0)
+            + eval_inv_gamma_logpdf(params["sigma2_alpha"], a=NU / 2.0, b=NU * hyper["s2_0_alpha"] / 2.0)
+            + eval_inv_gamma_logpdf(params["sigma2_beta"], a=NU / 2.0, b=NU * hyper["s2_0_beta"] / 2.0)
             + jnp.sum(stats.norm.logpdf(params["alpha"], loc=0.0, scale=jnp.sqrt(params["sigma2_alpha"])))
             + jnp.sum(stats.norm.logpdf(params["beta"], loc=0.0, scale=jnp.sqrt(params["sigma2_beta"]))))
 
 
-def logits(params, x):
+def compute_logits(params, x):
     hidden = jnp.tanh(params["alpha1"] + x @ params["alpha"])
     return jnp.concatenate([jnp.ones(1), params["beta1"] + hidden @ params["beta"]])
 
 
-def log_lik_one(params, datum, hyper):
-    v = logits(params=params, x=datum["x"])
+def eval_log_lik_one(datum, params, hyper):
+    v = compute_logits(params=params, x=datum["x"])
     return v[datum["y"] - 1] - logsumexp(v)
 
 
-def sample_one(key, params, datum, hyper):
-    draw = jax.random.categorical(key, logits=logits(params=params, x=datum["x"])) + 1
+def draw_one(key, datum, params, hyper):
+    draw = jax.random.categorical(key, logits=compute_logits(params=params, x=datum["x"])) + 1
     return {"y": draw.astype(datum["y"].dtype)}
 
 
-def nn_rbm_model(*, name, raw, n_hidden):
+def build_nn_rbm_model(*, name, raw, n_hidden):
     m, k = int(raw["M"]), int(raw["K"])
     return mg.ExchangeableModel(
         name=name,
@@ -72,8 +72,8 @@ def nn_rbm_model(*, name, raw, n_hidden):
             alpha1=pg.NumericVectorPattern(n_hidden),
             beta1=pg.NumericVectorPattern(k - 1),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
         data={"x": raw["x"], "y": jnp.asarray(raw["y"], dtype=jnp.int32)},
         hyper={"s2_0_alpha": (0.05 / m ** (1.0 / NU)) ** 2, "s2_0_beta": (0.05 / n_hidden ** (1.0 / NU)) ** 2},
     )

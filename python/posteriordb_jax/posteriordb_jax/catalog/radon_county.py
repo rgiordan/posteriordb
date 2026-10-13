@@ -32,21 +32,21 @@ STAN_MODEL = "radon_county"
 POSTERIORS = ["radon_mod-radon_county"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (stats.norm.logpdf(params["mu_a"], loc=0.0, scale=1.0)
             + jnp.sum(stats.norm.logpdf(params["a"], loc=params["mu_a"], scale=params["sigma_a"])))
 
 
-def _mean(params, datum):
+def _compute_mean(params, datum):
     return params["a"][datum["county"] - 1]
 
 
-def log_lik_one(params, datum, hyper):
-    return stats.norm.logpdf(datum["y"], loc=_mean(params=params, datum=datum), scale=params["sigma_y"])
+def eval_log_lik_one(datum, params, hyper):
+    return stats.norm.logpdf(datum["y"], loc=_compute_mean(params=params, datum=datum), scale=params["sigma_y"])
 
 
-def sample_one(key, params, datum, hyper):
-    return {"y": _mean(params=params, datum=datum) + params["sigma_y"] * jax.random.normal(key)}
+def draw_one(key, datum, params, hyper):
+    return {"y": _compute_mean(params=params, datum=datum) + params["sigma_y"] * jax.random.normal(key)}
 
 
 def build(raw):
@@ -63,6 +63,6 @@ def build(raw):
             "county": jnp.asarray(raw["county"], dtype=jnp.int32),
             "y": raw["y"],
         },
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
     )

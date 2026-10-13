@@ -20,21 +20,21 @@ from jax.scipy import stats
 import modelgami as mg
 import paragami as pg
 
-from ._gp import exp_quad_cov
+from ._gp import compute_exp_quad_cov
 
 STAN_MODEL = "gp_regr"
 POSTERIORS = ["gp_pois_regr-gp_regr"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (stats.gamma.logpdf(params["rho"], a=25.0, scale=1.0 / 4.0)
             + stats.norm.logpdf(params["alpha"], loc=0.0, scale=2.0)
             + stats.norm.logpdf(params["sigma"], loc=0.0, scale=1.0))
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     x, y = data["x"], data["y"]
-    cov = exp_quad_cov(x=x, alpha=params["alpha"], rho=params["rho"]) + params["sigma"] * jnp.eye(x.shape[0])
+    cov = compute_exp_quad_cov(x=x, alpha=params["alpha"], rho=params["rho"]) + params["sigma"] * jnp.eye(x.shape[0])
     return stats.multivariate_normal.logpdf(y, mean=jnp.zeros_like(y), cov=cov)
 
 
@@ -46,7 +46,7 @@ def build(raw):
             alpha=pg.NumericScalarPattern(lb=0.0),
             sigma=pg.NumericScalarPattern(lb=0.0),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={"x": raw["x"], "y": raw["y"]},
     )

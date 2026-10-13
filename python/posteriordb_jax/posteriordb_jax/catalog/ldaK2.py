@@ -12,11 +12,11 @@ Exchangeable: each word token is one datum carrying its word and document.
 
 import jax.numpy as jnp
 
-from ._lda import lda_model
+from ._lda import build_lda_model
 
 STAN_MODEL = "ldaK2"
 POSTERIORS = ["three_docs1200-ldaK2", "three_men1-ldaK2", "three_men2-ldaK2", "three_men3-ldaK2"]
 
 
 def build(raw):
-    return lda_model(name=STAN_MODEL, raw=raw, n_topics=2, alpha=jnp.ones(2), beta=jnp.ones(int(raw["V"])))
+    return build_lda_model(name=STAN_MODEL, raw=raw, n_topics=2, alpha=jnp.ones(2), beta=jnp.ones(int(raw["V"])))

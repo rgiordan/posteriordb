@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 from jax.scipy import stats
 
-from ._distributions import lognormal_logpdf
+from ._distributions import eval_lognormal_logpdf
 
 
 def obtain_adjustments(w):
@@ -30,7 +30,7 @@ def obtain_adjustments(w):
     return adj
 
 
-def adjusted_covariates(w):
+def adjust_covariates(w):
     """W_adj = (W - adj[1]) ./ adj[2], as a jnp array."""
     w = np.asarray(w, dtype=float)
     adj = obtain_adjustments(w)
@@ -42,18 +42,18 @@ def sum_to_zero(free):
     return jnp.append(free, -jnp.sum(free))
 
 
-def log_prior_alpha_lambda(params):
+def eval_log_prior_alpha_lambda(params):
     """alpha ~ lognormal(1, 1); lambda_adj ~ student_t(3, 0, 1)."""
-    return (jnp.sum(lognormal_logpdf(params["alpha"], mu=1.0, sigma=1.0))
+    return (jnp.sum(eval_lognormal_logpdf(params["alpha"], mu=1.0, sigma=1.0))
             + jnp.sum(stats.t.logpdf(params["lambda_adj"], df=3.0, loc=0.0, scale=1.0)))
 
 
-def theta_log_density(*, params, data):
+def eval_theta_log_density(*, params, data):
     """theta ~ normal(W_adj * lambda_adj, 1)."""
     return jnp.sum(stats.norm.logpdf(params["theta"], loc=data["w_adj"] @ params["lambda_adj"], scale=1.0))
 
 
-def categorical_steps_logpmf(*, y, steps, mask=None):
+def eval_categorical_steps_logpmf(*, y, steps, mask=None):
     """categorical_lpmf(y + 1 | softmax(cumulative_sum(append_row(0, steps))))
     for each row of `steps` (N, M). Entries where `mask` is False are padding
     (they must come last in each row) and are left out."""

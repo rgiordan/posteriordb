@@ -15,12 +15,12 @@ STAN_MODEL = "Rate_4_model"
 POSTERIORS = ["Rate_4_data-Rate_4_model"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (stats.beta.logpdf(params["theta"], a=1.0, b=1.0)
             + stats.beta.logpdf(params["thetaprior"], a=1.0, b=1.0))
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     return stats.binom.logpmf(data["k"], n=data["n"], p=params["theta"])
 
 
@@ -31,7 +31,7 @@ def build(raw):
             theta=pg.NumericScalarPattern(lb=0.0, ub=1.0),
             thetaprior=pg.NumericScalarPattern(lb=0.0, ub=1.0),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={"k": raw["k"], "n": raw["n"]},
     )

@@ -5,14 +5,14 @@ dog's 0/1 history y over trials, and its running counts of earlier shocks
 import jax.numpy as jnp
 
 
-def previous_counts(y):
+def count_previous(y):
     """(prev_shock, prev_avoid) before each trial, along the last axis of y."""
     shocks = jnp.cumsum(y, axis=-1) - y
     trials_before = jnp.arange(y.shape[-1])
     return shocks, trials_before - shocks
 
 
-def bernoulli_log_lik(*, y, p):
+def eval_bernoulli_log_lik(*, y, p):
     """Summed Bernoulli log probabilities. p is exactly 1 on each dog's first
     trial (no earlier shocks or avoidances), where y is 1, so log(1 - p) is
     only evaluated where y is 0 to keep values and gradients finite."""

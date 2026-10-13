@@ -30,7 +30,7 @@ STAN_MODEL = "bym2_offset_only"
 POSTERIORS = ["traffic_accident_nyc-bym2_offset_only"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     phi = params["phi"]
     n = phi.shape[0]
     icar = -0.5 * jnp.sum((phi[hyper["node1"] - 1] - phi[hyper["node2"] - 1]) ** 2)
@@ -42,7 +42,7 @@ def log_prior(params, hyper):
             + stats.norm.logpdf(jnp.sum(phi), loc=0.0, scale=0.001 * n))
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     rho = params["rho"]
     convolved_re = jnp.sqrt(1.0 - rho) * params["theta"] + jnp.sqrt(rho / hyper["scaling_factor"]) * params["phi"]
     log_rate = jnp.log(data["E"]) + params["beta0"] + convolved_re * params["sigma"]
@@ -60,8 +60,8 @@ def build(raw):
             theta=pg.NumericVectorPattern(n),
             phi=pg.NumericVectorPattern(n),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={"y": jnp.asarray(raw["y"], dtype=jnp.int32), "E": raw["E"]},
         hyper={
             "node1": jnp.asarray(raw["node1"], dtype=jnp.int32),

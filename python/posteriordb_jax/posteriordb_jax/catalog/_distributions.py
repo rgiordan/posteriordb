@@ -7,18 +7,18 @@ from jax.scipy import stats
 from jax.scipy.special import gammaln
 
 
-def binomial_logit_logpmf(k, *, n, logit_p):
+def eval_binomial_logit_logpmf(k, *, n, logit_p):
     """Stan's binomial_logit_lpmf(k | n, logit_p), elementwise, without forming p."""
     log_choose = gammaln(n + 1.0) - gammaln(k + 1.0) - gammaln(n - k + 1.0)
     return log_choose + k * logit_p - n * jax.nn.softplus(logit_p)
 
 
-def inv_gamma_logpdf(x, *, a, b):
+def eval_inv_gamma_logpdf(x, *, a, b):
     """Stan's inv_gamma_lpdf(x | a, b) (shape a, scale b)."""
     return a * jnp.log(b) - gammaln(a) - (a + 1.0) * jnp.log(x) - b / x
 
 
-def lkj_corr_cholesky_logpdf(cholesky, *, eta):
+def eval_lkj_corr_cholesky_logpdf(cholesky, *, eta):
     """Stan's lkj_corr_cholesky_lpdf(L | eta), with its normalizing constant
     (Lewandowski, Kurowicka and Joe 2009)."""
     k = cholesky.shape[-1]
@@ -31,6 +31,6 @@ def lkj_corr_cholesky_logpdf(cholesky, *, eta):
     return unnormalized - log_normalizer
 
 
-def lognormal_logpdf(x, *, mu, sigma):
+def eval_lognormal_logpdf(x, *, mu, sigma):
     """Stan's lognormal_lpdf(x | mu, sigma), elementwise."""
     return stats.norm.logpdf(jnp.log(x), loc=mu, scale=sigma) - jnp.log(x)

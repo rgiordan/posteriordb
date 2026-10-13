@@ -14,20 +14,20 @@ keep the full-data centering.
 
 import numpy as np
 
-from ._regression import normal_regression, ones_and
+from ._regression import build_normal_regression, prepend_ones
 
 STAN_MODEL = "kidscore_interaction_c"
 POSTERIORS = ["kidiq_with_mom_work-kidscore_interaction_c"]
 
 
-def features(d, hyper):
+def compute_features(d, hyper):
     hs = d["mom_hs"] - hyper["mom_hs_mean"]
     iq = d["mom_iq"] - hyper["mom_iq_mean"]
-    return ones_and(hs, iq, hs * iq)
+    return prepend_ones(hs, iq, hs * iq)
 
 
 def build(raw):
-    return normal_regression(
+    return build_normal_regression(
         name=STAN_MODEL,
         data={"kid_score": raw["kid_score"], "mom_hs": raw["mom_hs"], "mom_iq": raw["mom_iq"]},
         hyper={
@@ -35,7 +35,7 @@ def build(raw):
             "mom_iq_mean": float(np.mean(raw["mom_iq"])),
         },
         n_features=4,
-        features=features,
-        response=lambda d: d["kid_score"],
+        compute_features=compute_features,
+        compute_response=lambda d: d["kid_score"],
         response_field="kid_score",
     )

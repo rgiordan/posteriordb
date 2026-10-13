@@ -34,7 +34,7 @@ from jax.scipy import stats
 import modelgami as mg
 import paragami as pg
 
-from ._gp import exp_quad_cov
+from ._gp import compute_exp_quad_cov
 
 STAN_MODEL = "hierarchical_gp"
 POSTERIORS = ["state_wide_presidential_votes-hierarchical_gp"]
@@ -42,14 +42,14 @@ POSTERIORS = ["state_wide_presidential_votes-hierarchical_gp"]
 LENGTH_SCALES = ("length_GP_region_long", "length_GP_state_long", "length_GP_region_short", "length_GP_state_short")
 
 
-def weibull_logpdf(x, *, alpha, sigma):
+def eval_weibull_logpdf(x, *, alpha, sigma):
     return jnp.log(alpha / sigma) + (alpha - 1.0) * jnp.log(x / sigma) - (x / sigma) ** alpha
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     standard_normals = sum(jnp.sum(stats.norm.logpdf(params[field], loc=0.0, scale=1.0))
                            for field in ("GP_region_std", "GP_state_std", "year_std", "state_std", "region_std"))
-    lengths = sum(weibull_logpdf(params[field], alpha=30.0, sigma=8.0 if field.endswith("long") else 3.0)
+    lengths = sum(eval_weibull_logpdf(params[field], alpha=30.0, sigma=8.0 if field.endswith("long") else 3.0)
                   for field in LENGTH_SCALES)
     return (standard_normals
             + stats.norm.logpdf(params["mu"], loc=0.5, scale=0.5)
@@ -58,20 +58,20 @@ def log_prior(params, hyper):
             + lengths)
 
 
-def gp(*, sd_long, length_long, sd_short, length_short, std):
+def compute_gp(*, sd_long, length_long, sd_short, length_short, std):
     years = jnp.arange(1.0, std.shape[0] + 1.0)
-    cov = (exp_quad_cov(x=years, alpha=sd_long, rho=length_long)
-           + exp_quad_cov(x=years, alpha=sd_short, rho=length_short)
+    cov = (compute_exp_quad_cov(x=years, alpha=sd_long, rho=length_long)
+           + compute_exp_quad_cov(x=years, alpha=sd_short, rho=length_short)
            + 1e-6 * jnp.eye(std.shape[0]))
     return jnp.linalg.cholesky(cov) @ std
 
 
-def mean_and_sd(*, params, datum, hyper):
+def compute_mean_and_sd(*, params, datum, hyper):
     sds = jnp.sqrt(17.0 * params["prop_var"] * params["tot_var"])
     year, state, region = datum["year_ind"], datum["state_ind"], datum["region_ind"]
-    gp_region = gp(sd_long=sds[12], length_long=params["length_GP_region_long"], sd_short=sds[14],
+    gp_region = compute_gp(sd_long=sds[12], length_long=params["length_GP_region_long"], sd_short=sds[14],
                    length_short=params["length_GP_region_short"], std=params["GP_region_std"][:, region])
-    gp_state = gp(sd_long=sds[13], length_long=params["length_GP_state_long"], sd_short=sds[15],
+    gp_state = compute_gp(sd_long=sds[13], length_long=params["length_GP_state_long"], sd_short=sds[15],
                   length_short=params["length_GP_state_short"], std=params["GP_state_std"][:, state])
     mean = (params["mu"] + sds[0] * params["year_std"][year]
             + sds[2 + hyper["state_region_ind"][state]] * params["state_std"][state]
@@ -80,13 +80,13 @@ def mean_and_sd(*, params, datum, hyper):
     return mean, sds[16]
 
 
-def log_lik_one(params, datum, hyper):
-    mean, sd = mean_and_sd(params=params, datum=datum, hyper=hyper)
+def eval_log_lik_one(datum, params, hyper):
+    mean, sd = compute_mean_and_sd(params=params, datum=datum, hyper=hyper)
     return stats.norm.logpdf(datum["y"], loc=mean, scale=sd)
 
 
-def sample_one(key, params, datum, hyper):
-    mean, sd = mean_and_sd(params=params, datum=datum, hyper=hyper)
+def draw_one(key, datum, params, hyper):
+    mean, sd = compute_mean_and_sd(params=params, datum=datum, hyper=hyper)
     return {"y": mean + sd * jax.random.normal(key)}
 
 
@@ -105,8 +105,8 @@ def build(raw):
             mu=pg.NumericScalarPattern(),
             **{field: pg.NumericScalarPattern(lb=0.0) for field in LENGTH_SCALES},
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
         data={
             "y": raw["y"],
             "state_ind": jnp.asarray(raw["state_ind"], dtype=jnp.int32) - 1,

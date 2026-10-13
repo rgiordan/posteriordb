@@ -25,13 +25,13 @@ STAN_MODEL = "lsat_model"
 POSTERIORS = ["lsat_data-lsat_model"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (jnp.sum(stats.norm.logpdf(params["alpha"], loc=0.0, scale=100.0))
             + jnp.sum(stats.norm.logpdf(params["theta"], loc=0.0, scale=1.0))
             + stats.norm.logpdf(params["beta"], loc=0.0, scale=100.0))
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     logit_p = params["beta"] * params["theta"][:, None] - params["alpha"][None, :]
     return jnp.sum(data["r"] * logit_p - jax.nn.softplus(logit_p))
 
@@ -47,7 +47,7 @@ def build(raw):
             theta=pg.NumericVectorPattern(int(raw["N"])),
             beta=pg.NumericScalarPattern(lb=0.0),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={"r": jnp.asarray(r, dtype=jnp.int32)},
     )

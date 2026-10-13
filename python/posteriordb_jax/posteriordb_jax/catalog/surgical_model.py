@@ -18,20 +18,20 @@ from jax.scipy import stats
 import modelgami as mg
 import paragami as pg
 
-from ._distributions import binomial_logit_logpmf, inv_gamma_logpdf
+from ._distributions import eval_binomial_logit_logpmf, eval_inv_gamma_logpdf
 
 STAN_MODEL = "surgical_model"
 POSTERIORS = ["surgical_data-surgical_model"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (stats.norm.logpdf(params["mu"], loc=0.0, scale=1000.0)
-            + inv_gamma_logpdf(params["sigmasq"], a=0.001, b=0.001)
+            + eval_inv_gamma_logpdf(params["sigmasq"], a=0.001, b=0.001)
             + jnp.sum(stats.norm.logpdf(params["b"], loc=params["mu"], scale=jnp.sqrt(params["sigmasq"]))))
 
 
-def log_lik(params, data, hyper):
-    return jnp.sum(binomial_logit_logpmf(data["r"], n=data["n"], logit_p=params["b"]))
+def eval_log_lik(data, params, hyper):
+    return jnp.sum(eval_binomial_logit_logpmf(data["r"], n=data["n"], logit_p=params["b"]))
 
 
 def build(raw):
@@ -42,7 +42,7 @@ def build(raw):
             sigmasq=pg.NumericScalarPattern(lb=0.0),
             b=pg.NumericVectorPattern(int(raw["N"])),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={"r": jnp.asarray(raw["r"], dtype=jnp.int32), "n": jnp.asarray(raw["n"], dtype=jnp.int32)},
     )

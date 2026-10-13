@@ -22,7 +22,7 @@ STAN_MODEL = "Survey_model"
 POSTERIORS = ["Survey_data-Survey_model"]
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     n_values, k = hyper["n_values"], data["k"]
     log_lik_given_n = jnp.sum(stats.binom.logpmf(k[None, :], n=n_values[:, None], p=params["theta"]), axis=1)
     possible = n_values >= jnp.max(k)
@@ -34,7 +34,7 @@ def build(raw):
     return mg.Model(
         name=STAN_MODEL,
         params_pattern=pg.PatternDict(theta=pg.NumericScalarPattern(lb=0.0, ub=1.0)),
-        likelihood=mg.DGP(log_density=log_lik),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={"k": jnp.asarray(raw["k"], dtype=jnp.int32)},
         hyper={"n_values": jnp.arange(1, int(raw["nmax"]) + 1)},
     )

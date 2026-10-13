@@ -20,17 +20,17 @@ from jax.scipy import stats
 import modelgami as mg
 import paragami as pg
 
-from ._hmm import forward_log_marginal
+from ._hmm import eval_forward_log_marginal
 
 STAN_MODEL = "hmm_gaussian"
 POSTERIORS = ["hmm_gaussian_simulated-hmm_gaussian"]
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     log_emission = stats.norm.logpdf(data["y"][:, None], loc=params["mu"][None, :],
                                      scale=params["sigma"][None, :])   # (T, K)
     log_initial = jnp.log(params["pi1"]) + jnp.sum(log_emission[0]) - log_emission[0]
-    return forward_log_marginal(log_transition=jnp.log(params["A"]), log_emission=log_emission,
+    return eval_forward_log_marginal(log_transition=jnp.log(params["A"]), log_emission=log_emission,
                                 log_initial=log_initial)
 
 
@@ -45,6 +45,6 @@ def build(raw):
             sigma=pg.NumericVectorPattern(k, lb=0.0),
         ),
         prior=None,
-        likelihood=mg.DGP(log_density=log_lik),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={"y": raw["y"]},
     )

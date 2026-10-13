@@ -15,11 +15,11 @@ STAN_MODEL = "Rate_3_model"
 POSTERIORS = ["Rate_3_data-Rate_3_model"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return stats.beta.logpdf(params["theta"], a=1.0, b=1.0)
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     return (stats.binom.logpmf(data["k1"], n=data["n1"], p=params["theta"])
             + stats.binom.logpmf(data["k2"], n=data["n2"], p=params["theta"]))
 
@@ -30,7 +30,7 @@ def build(raw):
         params_pattern=pg.PatternDict(
             theta=pg.NumericScalarPattern(lb=0.0, ub=1.0),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={"k1": raw["k1"], "n1": raw["n1"], "k2": raw["k2"], "n2": raw["n2"]},
     )

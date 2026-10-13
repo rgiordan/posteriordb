@@ -26,22 +26,22 @@ STAN_MODEL = "diamonds"
 POSTERIORS = ["diamonds-diamonds"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (jnp.sum(stats.norm.logpdf(params["b"], loc=0.0, scale=1.0))
             + stats.t.logpdf(params["Intercept"], df=3.0, loc=8.0, scale=10.0)
             + stats.t.logpdf(params["sigma"], df=3.0, loc=0.0, scale=10.0) + jnp.log(2.0))
 
 
-def mean(params, datum, hyper):
+def compute_mean(params, datum, hyper):
     return params["Intercept"] + (datum["X"][1:] - hyper["means_X"]) @ params["b"]
 
 
-def log_lik_one(params, datum, hyper):
-    return stats.norm.logpdf(datum["Y"], loc=mean(params=params, datum=datum, hyper=hyper), scale=params["sigma"])
+def eval_log_lik_one(datum, params, hyper):
+    return stats.norm.logpdf(datum["Y"], loc=compute_mean(params=params, datum=datum, hyper=hyper), scale=params["sigma"])
 
 
-def sample_one(key, params, datum, hyper):
-    return {"Y": mean(params=params, datum=datum, hyper=hyper) + params["sigma"] * jax.random.normal(key)}
+def draw_one(key, datum, params, hyper):
+    return {"Y": compute_mean(params=params, datum=datum, hyper=hyper) + params["sigma"] * jax.random.normal(key)}
 
 
 def build(raw):
@@ -53,8 +53,8 @@ def build(raw):
             Intercept=pg.NumericScalarPattern(),
             sigma=pg.NumericScalarPattern(lb=0.0),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
         data={"Y": raw["Y"], "X": raw["X"]},
         hyper={"means_X": jnp.asarray(x[:, 1:].mean(axis=0))},
     )

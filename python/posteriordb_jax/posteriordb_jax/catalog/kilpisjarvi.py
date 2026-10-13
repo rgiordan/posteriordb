@@ -20,12 +20,12 @@ STAN_MODEL = "kilpisjarvi"
 POSTERIORS = ["kilpisjarvi_mod-kilpisjarvi"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (stats.norm.logpdf(params["alpha"], loc=hyper["pmualpha"], scale=hyper["psalpha"])
             + stats.norm.logpdf(params["beta"], loc=hyper["pmubeta"], scale=hyper["psbeta"]))
 
 
-def log_lik_one(params, datum, hyper):
+def eval_log_lik_one(datum, params, hyper):
     return stats.norm.logpdf(datum["y"], loc=params["alpha"] + params["beta"] * datum["x"], scale=params["sigma"])
 
 
@@ -39,6 +39,6 @@ def build(raw):
         ),
         data={"x": raw["x"], "y": raw["y"]},
         hyper={k: float(raw[k]) for k in ("pmualpha", "psalpha", "pmubeta", "psbeta")},
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one),
     )

@@ -50,17 +50,17 @@ STAN_MODEL = "radon_variable_intercept_slope_noncentered"
 POSTERIORS = ["radon_all-radon_variable_intercept_slope_noncentered", "radon_mn-radon_variable_intercept_slope_noncentered"]
 
 
-def alpha(params):
+def compute_alpha(params):
     """The transformed parameter alpha = mu_alpha + sigma_alpha * alpha_raw."""
     return params["mu_alpha"] + params["sigma_alpha"] * params["alpha_raw"]
 
 
-def beta(params):
+def compute_beta(params):
     """The transformed parameter beta = mu_beta + sigma_beta * beta_raw."""
     return params["mu_beta"] + params["sigma_beta"] * params["beta_raw"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (stats.norm.logpdf(params["sigma_y"], loc=0.0, scale=1.0)
             + stats.norm.logpdf(params["sigma_beta"], loc=0.0, scale=1.0)
             + stats.norm.logpdf(params["sigma_alpha"], loc=0.0, scale=1.0)
@@ -70,17 +70,17 @@ def log_prior(params, hyper):
             + jnp.sum(stats.norm.logpdf(params["beta_raw"], loc=0.0, scale=1.0)))
 
 
-def _mean(params, datum):
+def _compute_mean(params, datum):
     c = datum["county_idx"] - 1
-    return alpha(params)[c] + datum["floor_measure"] * beta(params)[c]
+    return compute_alpha(params)[c] + datum["floor_measure"] * compute_beta(params)[c]
 
 
-def log_lik_one(params, datum, hyper):
-    return stats.norm.logpdf(datum["log_radon"], loc=_mean(params=params, datum=datum), scale=params["sigma_y"])
+def eval_log_lik_one(datum, params, hyper):
+    return stats.norm.logpdf(datum["log_radon"], loc=_compute_mean(params=params, datum=datum), scale=params["sigma_y"])
 
 
-def sample_one(key, params, datum, hyper):
-    return {"log_radon": _mean(params=params, datum=datum) + params["sigma_y"] * jax.random.normal(key)}
+def draw_one(key, datum, params, hyper):
+    return {"log_radon": _compute_mean(params=params, datum=datum) + params["sigma_y"] * jax.random.normal(key)}
 
 
 def build(raw):
@@ -101,6 +101,6 @@ def build(raw):
             "floor_measure": raw["floor_measure"],
             "log_radon": raw["log_radon"],
         },
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
     )

@@ -28,7 +28,7 @@ STAN_MODEL = "GLMM_Poisson_model"
 POSTERIORS = ["GLMM_Poisson_data-GLMM_Poisson_model"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (stats.uniform.logpdf(params["alpha"], loc=-20.0, scale=40.0)
             + stats.uniform.logpdf(params["beta1"], loc=-10.0, scale=20.0)
             + stats.uniform.logpdf(params["beta2"], loc=-10.0, scale=20.0)
@@ -37,7 +37,7 @@ def log_prior(params, hyper):
             + jnp.sum(stats.norm.logpdf(params["eps"], loc=0.0, scale=params["sigma"])))
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     year = data["year"]
     log_lambda = (params["alpha"] + params["beta1"] * year + params["beta2"] * year**2
                   + params["beta3"] * year**3 + params["eps"])
@@ -55,7 +55,7 @@ def build(raw):
             eps=pg.NumericVectorPattern(int(raw["n"])),
             sigma=pg.NumericScalarPattern(lb=0.0, ub=5.0),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={"C": jnp.asarray(raw["C"], dtype=jnp.int32), "year": raw["year"]},
     )

@@ -30,7 +30,7 @@ def parse_name(name: str):
 
 
 def _shapes(pattern) -> Dict[str, tuple]:
-    empty = pattern.empty(valid=True)
+    empty = pattern.make_empty(valid=True)
     return {k: np.shape(v) for k, v in empty.items()}
 
 

@@ -33,14 +33,14 @@ GROUPS = [("a", "age", "n_age"), ("b", "edu", "n_edu"), ("c", "age_edu", "n_age_
           ("d", "state", "n_state"), ("e", "region_full", "n_region_full")]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     lp = jnp.sum(stats.norm.logpdf(params["beta"], loc=0.0, scale=100.0))
     for effect, _, _ in GROUPS:
         lp = lp + jnp.sum(stats.norm.logpdf(params[effect], loc=0.0, scale=params[f"sigma_{effect}"]))
     return lp
 
 
-def y_hat(params, datum):
+def compute_y_hat(params, datum):
     beta = params["beta"]
     out = (beta[0] + beta[1] * datum["black"] + beta[2] * datum["female"]
            + beta[4] * datum["female"] * datum["black"] + beta[3] * datum["v_prev_full"])
@@ -49,13 +49,13 @@ def y_hat(params, datum):
     return out
 
 
-def log_lik_one(params, datum, hyper):
-    eta = y_hat(params=params, datum=datum)
+def eval_log_lik_one(datum, params, hyper):
+    eta = compute_y_hat(params=params, datum=datum)
     return datum["y"] * eta - jax.nn.softplus(eta)
 
 
-def sample_one(key, params, datum, hyper):
-    p = jax.nn.sigmoid(y_hat(params=params, datum=datum))
+def draw_one(key, datum, params, hyper):
+    p = jax.nn.sigmoid(compute_y_hat(params=params, datum=datum))
     return {"y": jax.random.bernoulli(key, p=p).astype(datum["y"].dtype)}
 
 
@@ -70,7 +70,7 @@ def build(raw):
     return mg.ExchangeableModel(
         name=STAN_MODEL,
         params_pattern=pg.PatternDict(**patterns),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
         data=data,
     )

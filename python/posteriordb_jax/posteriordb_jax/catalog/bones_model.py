@@ -27,11 +27,11 @@ STAN_MODEL = "bones_model"
 POSTERIORS = ["bones_data-bones_model"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return jnp.sum(stats.norm.logpdf(params["theta"], loc=0.0, scale=36.0))
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     gamma, delta, ncat, grade = data["gamma"], data["delta"], data["ncat"], data["grade"]
     k = jnp.arange(1, gamma.shape[1] + 1)                          # thresholds 1..4
     has_threshold = k[None, :] < ncat[:, None]                     # (nInd, 4)
@@ -50,8 +50,8 @@ def build(raw):
     return mg.Model(
         name=STAN_MODEL,
         params_pattern=pg.PatternDict(theta=pg.NumericVectorPattern(int(raw["nChild"]))),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={
             "gamma": raw["gamma"],
             "delta": raw["delta"],

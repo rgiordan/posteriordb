@@ -25,20 +25,20 @@ from jax.scipy import stats
 import modelgami as mg
 import paragami as pg
 
-from ._distributions import lkj_corr_cholesky_logpdf, lognormal_logpdf
+from ._distributions import eval_lkj_corr_cholesky_logpdf, eval_lognormal_logpdf
 
 STAN_MODEL = "kronecker_gp"
 POSTERIORS = ["synthetic_grid_RBF_kernels-kronecker_gp"]
 
 
-def log_prior(params, hyper):
-    return (lognormal_logpdf(params["var1"], mu=0.0, sigma=1.0)
+def eval_log_prior(params, hyper):
+    return (eval_lognormal_logpdf(params["var1"], mu=0.0, sigma=1.0)
             + stats.cauchy.logpdf(params["bw1"], loc=0.0, scale=2.5)
-            + lognormal_logpdf(params["sigma1"], mu=0.0, sigma=1.0)
-            + lkj_corr_cholesky_logpdf(params["L"], eta=2.0))
+            + eval_lognormal_logpdf(params["sigma1"], mu=0.0, sigma=1.0)
+            + eval_lkj_corr_cholesky_logpdf(params["L"], eta=2.0))
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     """The multivariate normal density of vec(y) evaluated with a Cholesky
     factor of the full Lambda (x) Sigma1 + sigma1 I. Stan's eigendecomposition
     route is the same quantity, but Sigma1's eigenvalues are nearly repeated
@@ -62,7 +62,7 @@ def build(raw):
             L=pg.CholeskyCorrPattern(int(raw["n2"])),
             sigma1=pg.NumericScalarPattern(lb=0.00001),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={"x1": raw["x1"], "y": raw["y"]},
     )

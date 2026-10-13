@@ -36,7 +36,7 @@ class SlurmOptions:
     python: str = "python"
     extra_sbatch: Sequence[str] = field(default_factory=tuple)   # e.g. ["--qos=long"]
 
-    def sbatch_lines(self, *, n_tasks: int, log_dir: Path) -> List[str]:
+    def format_sbatch_lines(self, *, n_tasks: int, log_dir: Path) -> List[str]:
         array = f"0-{n_tasks - 1}" + (f"%{self.max_concurrent}" if self.max_concurrent else "")
         options = [
             f"--job-name={self.job_name}",
@@ -56,7 +56,7 @@ class SlurmOptions:
         return [f"#SBATCH {option}" for option in options]
 
 
-def portable_analysis_spec(spec: str) -> str:
+def make_analysis_spec_portable(spec: str) -> str:
     """The spec with a file path made absolute, so tasks find it from any
     working directory."""
     module_name, _, attribute = spec.rpartition(":")
@@ -78,13 +78,13 @@ def write_job(*, analysis: str, entries: Iterable[Entry], out_root: Path, option
     names_file = job_dir / "names.txt"
     names_file.write_text("\n".join(names) + "\n")
     command = [options.python, "-m", "posteriordb_jax.batch", "run-one",
-               "--analysis", portable_analysis_spec(analysis), "--names-file", str(names_file),
+               "--analysis", make_analysis_spec_portable(analysis), "--names-file", str(names_file),
                "--index", "$SLURM_ARRAY_TASK_ID", "--out", str(out_root)]
     if overwrite:
         command.append("--overwrite")
     script = "\n".join([
         "#!/bin/bash",
-        *options.sbatch_lines(n_tasks=len(names), log_dir=log_dir),
+        *options.format_sbatch_lines(n_tasks=len(names), log_dir=log_dir),
         "",
         "set -euo pipefail",
         *options.setup,

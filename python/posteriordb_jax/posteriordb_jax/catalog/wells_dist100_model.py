@@ -7,21 +7,21 @@
 
 import jax.numpy as jnp
 
-from ._regression import logistic_regression
+from ._regression import build_logistic_regression
 
 STAN_MODEL = "wells_dist100_model"
 POSTERIORS = ["wells_data-wells_dist100_model"]
 
 
-def features(d, hyper):
+def compute_features(d, hyper):
     return jnp.stack([d["dist"] / 100.0])
 
 
 def build(raw):
-    return logistic_regression(
+    return build_logistic_regression(
         name=STAN_MODEL,
         data={"switched": raw["switched"], "dist": raw["dist"]},
         n_features=1,
-        features=features,
+        compute_features=compute_features,
         response_field="switched",
     )

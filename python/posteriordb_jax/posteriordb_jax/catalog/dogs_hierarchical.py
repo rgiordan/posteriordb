@@ -11,16 +11,16 @@ import jax.numpy as jnp
 import modelgami as mg
 import paragami as pg
 
-from ._dogs import bernoulli_log_lik, previous_counts
+from ._dogs import eval_bernoulli_log_lik, count_previous
 
 STAN_MODEL = "dogs_hierarchical"
 POSTERIORS = ["dogs-dogs_hierarchical"]
 
 
-def log_lik_one(params, datum, hyper):
-    shocks, avoids = previous_counts(datum["y"])
+def eval_log_lik_one(datum, params, hyper):
+    shocks, avoids = count_previous(datum["y"])
     p = params["a"] ** shocks * params["b"] ** avoids
-    return bernoulli_log_lik(y=datum["y"], p=p)
+    return eval_bernoulli_log_lik(y=datum["y"], p=p)
 
 
 def build(raw):
@@ -30,6 +30,6 @@ def build(raw):
             a=pg.NumericScalarPattern(lb=0.0, ub=1.0),
             b=pg.NumericScalarPattern(lb=0.0, ub=1.0),
         ),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one),
         data={"y": jnp.asarray(raw["y"], dtype=jnp.int32)},
     )

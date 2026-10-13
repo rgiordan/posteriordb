@@ -36,13 +36,13 @@ import modelgami as mg
 import paragami as pg
 
 
-def neg_binomial_2_logpmf(k, *, mu, phi):
+def eval_neg_binomial_2_logpmf(k, *, mu, phi):
     """Stan's neg_binomial_2_lpmf(k | mu, phi), elementwise."""
     return (gammaln(k + phi) - gammaln(k + 1.0) - gammaln(phi)
             + phi * (jnp.log(phi) - jnp.log(mu + phi)) + k * (jnp.log(mu) - jnp.log(mu + phi)))
 
 
-def lag_matrix(kernel):
+def build_lag_matrix(kernel):
     """W[i, j] = kernel[i - j - 1] for j < i, else 0 (0-based), so that
     (W @ x)[i] = sum_{j<i} x[j] * kernel[i - j] in Stan's 1-based indexing."""
     n = kernel.shape[0]
@@ -50,7 +50,7 @@ def lag_matrix(kernel):
     return np.where(lag >= 0, np.asarray(kernel)[np.clip(lag, 0, None)], 0.0)
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     tau = params["tau"]
     return (stats.expon.logpdf(tau, scale=1.0 / 0.03)
             + jnp.sum(stats.expon.logpdf(params["y"], scale=tau))
@@ -61,7 +61,7 @@ def log_prior(params, hyper):
             + jnp.sum(stats.norm.logpdf(params["ifr_noise"], loc=1.0, scale=0.1)))
 
 
-def expected_deaths(*, params, data, hyper):
+def compute_expected_deaths(*, params, data, hyper):
     """E_deaths, (M, N2)."""
     alpha = params["alpha_hier"] - jnp.log(1.05) / 6.0
     si_lags = hyper["si_lags"]
@@ -85,13 +85,13 @@ def expected_deaths(*, params, data, hyper):
                                  hyper["f_lags"])
 
 
-def log_lik(params, data, hyper):
-    e_deaths = expected_deaths(params=params, data=data, hyper=hyper)
-    terms = neg_binomial_2_logpmf(data["deaths"], mu=jnp.where(data["observed"], e_deaths, 1.0), phi=params["phi"])
+def eval_log_lik(data, params, hyper):
+    e_deaths = compute_expected_deaths(params=params, data=data, hyper=hyper)
+    terms = eval_neg_binomial_2_logpmf(data["deaths"], mu=jnp.where(data["observed"], e_deaths, 1.0), phi=params["phi"])
     return jnp.sum(jnp.where(data["observed"], terms, 0.0))
 
 
-def covid_model(*, name, raw):
+def build_covid_model(*, name, raw):
     n_countries, n_days, n_covariates = int(raw["M"]), int(raw["N2"]), int(raw["P"])
     deaths = np.asarray(raw["deaths"], dtype=float).T                         # (M, N2)
     day = np.arange(1, n_days + 1)
@@ -108,8 +108,8 @@ def covid_model(*, name, raw):
             tau=pg.NumericScalarPattern(lb=0.0),
             ifr_noise=pg.NumericVectorPattern(n_countries, lb=0.0),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={
             "deaths": jnp.asarray(np.where(observed, deaths, 0.0)),   # unobserved days hold -1 in posteriordb
             "observed": jnp.asarray(observed),
@@ -117,8 +117,8 @@ def covid_model(*, name, raw):
         },
         hyper={
             "pop": jnp.asarray(raw["pop"]),
-            "si_lags": jnp.asarray(lag_matrix(np.asarray(raw["SI"]))),
-            "f_lags": jnp.asarray(np.stack([lag_matrix(column) for column in np.asarray(raw["f"]).T])),
+            "si_lags": jnp.asarray(build_lag_matrix(np.asarray(raw["SI"]))),
+            "f_lags": jnp.asarray(np.stack([build_lag_matrix(column) for column in np.asarray(raw["f"]).T])),
             "seeded": jnp.zeros(int(raw["N0"])),
         },
     )

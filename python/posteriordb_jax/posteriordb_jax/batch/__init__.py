@@ -10,7 +10,7 @@ results into `out_dir`. Name it to the command line as "module:function" or
     from functools import partial
     from posteriordb_jax.batch import analyses
 
-    short_mcmc = partial(analyses.mcmc, n_warmup=500, n_draws=500)
+    short_mcmc = partial(analyses.run_mcmc, n_warmup=500, n_draws=500)
 
     python -m posteriordb_jax.batch local  --analysis my_analyses.py:short_mcmc --out results --posteriors eight_schools-eight_schools_noncentered
     python -m posteriordb_jax.batch submit --analysis my_analyses.py:short_mcmc --out results --time 02:00:00
@@ -25,13 +25,13 @@ Modules:
 - `entry`:    `Entry` and `entries` (selecting posteriors).
 - `runner`:   running an analysis on entries and recording each one's status.
 - `slurm`:    writing and submitting the Slurm array job.
-- `mcmc`:     NUTS with BlackJAX, optionally with bootstrap weights (needs blackjax).
-- `analyses`: ready-made analyses: `mcmc` and `bootstrap_mcmc` (need blackjax).
+- `run_mcmc`:     NUTS with BlackJAX, optionally with bootstrap weights (needs blackjax).
+- `analyses`: ready-made analyses: `run_mcmc` and `run_bootstrap_mcmc` (need blackjax).
 """
 
-from .entry import Entry, entries
-from .runner import NotApplicable, load_analysis, read_status, run_entry, run_local, statuses
+from .entry import Entry, select_entries
+from .runner import NotApplicable, load_analysis, read_status, run_entry, run_local, read_statuses
 from .slurm import SlurmOptions, submit, write_job
 
-__all__ = ["Entry", "entries", "NotApplicable", "load_analysis", "read_status", "run_entry", "run_local",
-           "statuses", "SlurmOptions", "submit", "write_job"]
+__all__ = ["Entry", "select_entries", "NotApplicable", "load_analysis", "read_status", "run_entry", "run_local",
+           "read_statuses", "SlurmOptions", "submit", "write_job"]

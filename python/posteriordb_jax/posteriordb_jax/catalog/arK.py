@@ -22,13 +22,13 @@ STAN_MODEL = "arK"
 POSTERIORS = ["arK-arK"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (stats.norm.logpdf(params["alpha"], loc=0.0, scale=10.0)
             + jnp.sum(stats.norm.logpdf(params["beta"], loc=0.0, scale=10.0))
             + stats.cauchy.logpdf(params["sigma"], loc=0.0, scale=2.5))
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     y, k = data["y"], params["beta"].shape[0]
     t = y.shape[0]
     # lags[:, j] = y[t - (j + 1)] for t = K..T-1 (0-based)
@@ -46,7 +46,7 @@ def build(raw):
             beta=pg.NumericVectorPattern(k),
             sigma=pg.NumericScalarPattern(lb=0.0),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={"y": raw["y"]},
     )

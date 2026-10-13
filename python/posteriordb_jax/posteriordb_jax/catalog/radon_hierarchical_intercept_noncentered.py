@@ -44,12 +44,12 @@ STAN_MODEL = "radon_hierarchical_intercept_noncentered"
 POSTERIORS = ["radon_all-radon_hierarchical_intercept_noncentered", "radon_mn-radon_hierarchical_intercept_noncentered"]
 
 
-def alpha(params):
+def compute_alpha(params):
     """The transformed parameter alpha = mu_alpha + sigma_alpha * alpha_raw."""
     return params["mu_alpha"] + params["sigma_alpha"] * params["alpha_raw"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (stats.norm.logpdf(params["sigma_alpha"], loc=0.0, scale=1.0)
             + stats.norm.logpdf(params["sigma_y"], loc=0.0, scale=1.0)
             + stats.norm.logpdf(params["mu_alpha"], loc=0.0, scale=10.0)
@@ -57,16 +57,16 @@ def log_prior(params, hyper):
             + jnp.sum(stats.norm.logpdf(params["alpha_raw"], loc=0.0, scale=1.0)))
 
 
-def _mean(params, datum):
-    return alpha(params)[datum["county_idx"] - 1] + datum["log_uppm"] * params["beta"][0] + datum["floor_measure"] * params["beta"][1]
+def _compute_mean(params, datum):
+    return compute_alpha(params)[datum["county_idx"] - 1] + datum["log_uppm"] * params["beta"][0] + datum["floor_measure"] * params["beta"][1]
 
 
-def log_lik_one(params, datum, hyper):
-    return stats.norm.logpdf(datum["log_radon"], loc=_mean(params=params, datum=datum), scale=params["sigma_y"])
+def eval_log_lik_one(datum, params, hyper):
+    return stats.norm.logpdf(datum["log_radon"], loc=_compute_mean(params=params, datum=datum), scale=params["sigma_y"])
 
 
-def sample_one(key, params, datum, hyper):
-    return {"log_radon": _mean(params=params, datum=datum) + params["sigma_y"] * jax.random.normal(key)}
+def draw_one(key, datum, params, hyper):
+    return {"log_radon": _compute_mean(params=params, datum=datum) + params["sigma_y"] * jax.random.normal(key)}
 
 
 def build(raw):
@@ -86,6 +86,6 @@ def build(raw):
             "floor_measure": raw["floor_measure"],
             "log_radon": raw["log_radon"],
         },
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
     )

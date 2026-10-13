@@ -3,22 +3,22 @@
     watched ~ normal(beta[1] + beta[2] * encouraged, sigma)
 """
 
-from ._regression import normal_regression, ones_and
+from ._regression import build_normal_regression, prepend_ones
 
 STAN_MODEL = "sesame_one_pred_a"
 POSTERIORS = ["sesame_data-sesame_one_pred_a"]
 
 
-def features(d, hyper):
-    return ones_and(d["encouraged"])
+def compute_features(d, hyper):
+    return prepend_ones(d["encouraged"])
 
 
 def build(raw):
-    return normal_regression(
+    return build_normal_regression(
         name=STAN_MODEL,
         data={"watched": raw["watched"], "encouraged": raw["encouraged"]},
         n_features=2,
-        features=features,
-        response=lambda d: d["watched"],
+        compute_features=compute_features,
+        compute_response=lambda d: d["watched"],
         response_field="watched",
     )

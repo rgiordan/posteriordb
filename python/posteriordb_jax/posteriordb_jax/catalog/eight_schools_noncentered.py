@@ -22,13 +22,13 @@ STAN_MODEL = "eight_schools_noncentered"
 POSTERIORS = ["eight_schools-eight_schools_noncentered"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (jnp.sum(stats.norm.logpdf(params["theta_trans"], loc=0.0, scale=1.0))
             + stats.norm.logpdf(params["mu"], loc=0.0, scale=5.0)
             + stats.cauchy.logpdf(params["tau"], loc=0.0, scale=5.0))
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     theta = params["theta_trans"] * params["tau"] + params["mu"]
     return jnp.sum(stats.norm.logpdf(data["y"], loc=theta, scale=data["sigma"]))
 
@@ -43,6 +43,6 @@ def build(raw):
             tau=pg.NumericScalarPattern(lb=0.0),
         ),
         data={"y": raw["y"], "sigma": raw["sigma"]},
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
     )

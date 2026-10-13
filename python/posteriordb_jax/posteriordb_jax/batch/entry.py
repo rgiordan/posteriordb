@@ -38,7 +38,7 @@ class Entry:
         return self.info["data_name"]
 
     @property
-    def exchangeable(self) -> bool:
+    def is_exchangeable(self) -> bool:
         """Whether the data are exchangeable observations, so that bootstrap
         weights make sense."""
         return isinstance(self.model, mg.ExchangeableModel)
@@ -47,13 +47,13 @@ class Entry:
     def has_reference_draws(self) -> bool:
         return self.info.get("reference_posterior_name") is not None
 
-    def reference_draws(self) -> Optional[Dict[str, Any]]:
+    def load_reference_draws(self) -> Optional[Dict[str, Any]]:
         """posteriordb's reference posterior draws as folded arrays with
         leading (chain, draw) axes, or None when there are none."""
-        return catalog.reference_draws(self.name) if self.has_reference_draws else None
+        return catalog.load_reference_draws(self.name) if self.has_reference_draws else None
 
 
-def entries(names: Optional[Iterable[str]] = None, *, exchangeable: Optional[bool] = None,
+def select_entries(names: Optional[Iterable[str]] = None, *, exchangeable: Optional[bool] = None,
             with_reference_draws: Optional[bool] = None) -> List[Entry]:
     """The catalog's posteriors (or `names`), optionally only those whose
     data are (or are not) exchangeable, or that have (or lack) reference
@@ -62,5 +62,5 @@ def entries(names: Optional[Iterable[str]] = None, *, exchangeable: Optional[boo
     if with_reference_draws is not None:
         selected = [e for e in selected if e.has_reference_draws == with_reference_draws]
     if exchangeable is not None:
-        selected = [e for e in selected if e.exchangeable == exchangeable]
+        selected = [e for e in selected if e.is_exchangeable == exchangeable]
     return selected

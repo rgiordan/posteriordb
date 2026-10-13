@@ -5,27 +5,27 @@
 
 import jax.numpy as jnp
 
-from ._regression import normal_regression, ones_and
+from ._regression import build_normal_regression, prepend_ones
 
 STAN_MODEL = "logmesquite_logvolume"
 POSTERIORS = ['mesquite-logmesquite_logvolume']
 
 
-def features(d, hyper):
-    return ones_and(jnp.log(d["diam1"] * d["diam2"] * d["canopy_height"]))
+def compute_features(d, hyper):
+    return prepend_ones(jnp.log(d["diam1"] * d["diam2"] * d["canopy_height"]))
 
 
-def response(d):
+def compute_response(d):
     return jnp.log(d["weight"])
 
 
 def build(raw):
-    return normal_regression(
+    return build_normal_regression(
         name=STAN_MODEL,
         data={"weight": raw["weight"], "diam1": raw["diam1"], "diam2": raw["diam2"], "canopy_height": raw["canopy_height"]},
         n_features=2,
-        features=features,
-        response=response,
+        compute_features=compute_features,
+        compute_response=compute_response,
         response_field="weight",
-        inverse_response=jnp.exp,
+        invert_response=jnp.exp,
     )

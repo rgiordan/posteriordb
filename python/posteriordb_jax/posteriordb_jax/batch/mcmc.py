@@ -26,9 +26,9 @@ class NutsResult:
     seconds: float              # sampling time, including compilation on a sampler's first call
 
 
-def nuts_sampler(*, model: mg.Model, n_chains: int = 4, n_warmup: int = 1000, n_draws: int = 1000,
+def build_nuts_sampler(*, model: mg.Model, n_chains: int = 4, n_warmup: int = 1000, n_draws: int = 1000,
                  weighted: bool = False, target_acceptance_rate: float = 0.8) -> Callable:
-    """A compiled `sample(key, weights) -> NutsResult` that runs `n_chains`
+    """A compiled `draw_samples(key, weights) -> NutsResult` that runs `n_chains`
     independent NUTS chains, each initialized at a random draw from the
     parameters' pattern. With `weighted`, `weights` (one per observation of
     an `ExchangeableModel`) multiply the pointwise log likelihood; otherwise
@@ -36,29 +36,27 @@ def nuts_sampler(*, model: mg.Model, n_chains: int = 4, n_warmup: int = 1000, n_
     replicate, so the sampler compiles only once."""
     if weighted and not isinstance(model, mg.ExchangeableModel):
         raise ValueError("weights need an ExchangeableModel")
-    joint = model.log_density_fn("joint", params_as="free")
-
     def run_chain(chain_key, weights):
         if weighted:
-            logdensity = lambda x: joint(x, weights=weights)
+            logdensity = lambda x: model.eval_free_log_joint(x, weights=weights)
         else:
-            logdensity = joint
+            logdensity = model.eval_free_log_joint
         init_key, warmup_key, sample_key = jax.random.split(chain_key, 3)
-        x_init = model.params_pattern.folded_to_free(model.params_pattern.random(init_key))
+        x_init = model.params_pattern.folded_to_free(model.params_pattern.draw_random(init_key))
         warmup = blackjax.window_adaptation(blackjax.nuts, logdensity, target_acceptance_rate=target_acceptance_rate)
         (state, tuned), _ = warmup.run(warmup_key, x_init, num_steps=n_warmup)
         step = blackjax.nuts(logdensity, **tuned).step
 
-        def one_step(state, step_key):
+        def take_step(state, step_key):
             state, info = step(step_key, state)
             return state, (state.position, info.is_divergent)
 
-        _, (positions, divergent) = jax.lax.scan(one_step, state, jax.random.split(sample_key, n_draws))
+        _, (positions, divergent) = jax.lax.scan(take_step, state, jax.random.split(sample_key, n_draws))
         return positions, divergent, tuned["step_size"]
 
     run_chains = jax.jit(jax.vmap(run_chain, in_axes=(0, None)))
 
-    def sample(key, weights=None) -> NutsResult:
+    def draw_samples(key, weights=None) -> NutsResult:
         start = time.perf_counter()
         free_draws, divergent, step_size = run_chains(jax.random.split(key, n_chains), weights)
         free_draws = np.asarray(free_draws)
@@ -68,12 +66,12 @@ def nuts_sampler(*, model: mg.Model, n_chains: int = 4, n_warmup: int = 1000, n_
         return NutsResult(draws=draws, free_draws=free_draws, n_divergent=int(np.sum(divergent)),
                           step_size=np.asarray(step_size), seconds=seconds)
 
-    return sample
+    return draw_samples
 
 
-def nuts(*, model: mg.Model, key, n_chains: int = 4, n_warmup: int = 1000, n_draws: int = 1000,
+def run_nuts(*, model: mg.Model, key, n_chains: int = 4, n_warmup: int = 1000, n_draws: int = 1000,
          weights: Optional[jnp.ndarray] = None, target_acceptance_rate: float = 0.8) -> NutsResult:
-    """One run of `nuts_sampler`."""
-    sample = nuts_sampler(model=model, n_chains=n_chains, n_warmup=n_warmup, n_draws=n_draws,
+    """One run of `build_nuts_sampler`."""
+    draw_samples = build_nuts_sampler(model=model, n_chains=n_chains, n_warmup=n_warmup, n_draws=n_draws,
                           weighted=weights is not None, target_acceptance_rate=target_acceptance_rate)
-    return sample(key, weights)
+    return draw_samples(key, weights)

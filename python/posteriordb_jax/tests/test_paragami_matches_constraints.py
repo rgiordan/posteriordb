@@ -32,7 +32,7 @@ CASES = [
 @pytest.mark.parametrize("spec,pattern", CASES, ids=[f"{s.constraint.name}{s.shape}" for s, _ in CASES])
 def test_same_transform(spec, pattern):
     ms = ModelSpec((spec,))
-    assert pattern.free_length() == ms.free_dim
+    assert pattern.get_free_length() == ms.free_dim
     for k in jax.random.split(jax.random.PRNGKey(0), 5):
         x = 0.7 * jax.random.normal(k, (ms.free_dim,))
         old, old_logdet = ms.constrain(x)

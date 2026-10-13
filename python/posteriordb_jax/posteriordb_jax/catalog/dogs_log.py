@@ -19,20 +19,20 @@ from jax.scipy import stats
 import modelgami as mg
 import paragami as pg
 
-from ._dogs import previous_counts
+from ._dogs import count_previous
 
 STAN_MODEL = "dogs_log"
 POSTERIORS = ["dogs-dogs_log"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (stats.uniform.logpdf(params["beta"][0], loc=-100.0, scale=100.0)
             + stats.uniform.logpdf(params["beta"][1], loc=0.0, scale=100.0))
 
 
-def log_lik_one(params, datum, hyper):
+def eval_log_lik_one(datum, params, hyper):
     y = datum["y"]
-    shocks, avoids = previous_counts(y)
+    shocks, avoids = count_previous(y)
     logit_p = params["beta"][0] * avoids + params["beta"][1] * shocks
     return jnp.sum(y * logit_p - jax.nn.softplus(logit_p))
 
@@ -41,7 +41,7 @@ def build(raw):
     return mg.ExchangeableModel(
         name=STAN_MODEL,
         params_pattern=pg.PatternDict(beta=pg.NumericVectorPattern(2)),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one),
         data={"y": jnp.asarray(raw["y"], dtype=jnp.int32)},
     )

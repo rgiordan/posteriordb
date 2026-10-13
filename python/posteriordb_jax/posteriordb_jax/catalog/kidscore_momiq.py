@@ -20,16 +20,16 @@ STAN_MODEL = "kidscore_momiq"
 POSTERIORS = ["kidiq-kidscore_momiq"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return stats.cauchy.logpdf(params["sigma"], loc=0.0, scale=2.5)
 
 
-def log_lik_one(params, datum, hyper):
+def eval_log_lik_one(datum, params, hyper):
     mean = params["beta"][0] + params["beta"][1] * datum["mom_iq"]
     return stats.norm.logpdf(datum["kid_score"], loc=mean, scale=params["sigma"])
 
 
-def sample_one(key, params, datum, hyper):
+def draw_one(key, datum, params, hyper):
     mean = params["beta"][0] + params["beta"][1] * datum["mom_iq"]
     return {"kid_score": mean + params["sigma"] * jax.random.normal(key)}
 
@@ -39,6 +39,6 @@ def build(raw):
         name=STAN_MODEL,
         params_pattern=pg.PatternDict(beta=pg.NumericVectorPattern(2), sigma=pg.NumericScalarPattern(lb=0.0)),
         data={"kid_score": raw["kid_score"], "mom_iq": raw["mom_iq"]},
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
     )

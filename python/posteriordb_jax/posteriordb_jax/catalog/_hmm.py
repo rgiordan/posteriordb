@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 
 
-def forward_log_marginal(*, log_transition, log_emission, log_initial=None):
+def eval_forward_log_marginal(*, log_transition, log_emission, log_initial=None):
     """log p(y_1:T), summing over the hidden states with the forward
     recursion gamma[t, k] = log_sum_exp_j(gamma[t - 1, j] + log_transition[j, k])
     + log_emission[t, k]. `log_emission` is (T, K); with no `log_initial`,

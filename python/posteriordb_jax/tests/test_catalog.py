@@ -4,6 +4,7 @@ agreement with the old `StatisticalModel` translations and with Stan."""
 import jax
 import jax.numpy as jnp
 import numpy as np
+import paragami as pg
 import pytest
 
 import posteriordb_jax  # noqa: F401  (enables float64)
@@ -16,7 +17,7 @@ from modelgami.testing import check_model_contract
 NAMES = catalog.list_models()
 # Models translated after the old StatisticalModel versions were retired have
 # no old translation to compare against; BridgeStan still checks them.
-OLD_NAMES = [name for name in NAMES if catalog.module_for(name).STAN_MODEL in MODEL_REGISTRY]
+OLD_NAMES = [name for name in NAMES if catalog.find_module(name).STAN_MODEL in MODEL_REGISTRY]
 
 # Per-posterior exceptions to the BridgeStan comparison:
 # - Stan's bernoulli_logit_lpmf and bernoulli_logit_glm_lpmf switch to cutoff
@@ -90,7 +91,7 @@ def test_matches_old_translation(name):
     the vague gamma and inverse-gamma priors (e.g. gamma(1e-4, 1e-4)), which
     the new versions don't have: they match Stan to ~1e-14."""
     model = catalog.load(name)
-    mod = catalog.module_for(name)
+    mod = catalog.find_module(name)
     raw = load_data(load_posterior_info(name)["data_name"])
     # Lists become float arrays, except integer fields the new model either
     # casts to int32 (indices and 0/1 outcomes) or doesn't take at all
@@ -102,9 +103,9 @@ def test_matches_old_translation(name):
     data = {k: (jnp.asarray(v, dtype=jnp.int32 if k in int_fields else jnp.float64) if isinstance(v, list) else v)
             for k, v in raw.items()}
     old = MODEL_REGISTRY[mod.STAN_MODEL](data)
-    f = model.log_density_fn("joint", params_as="free")
+    f = model.eval_free_log_joint
     for k in jax.random.split(jax.random.PRNGKey(0), 5):
-        x = jax.random.normal(k, (model.params_pattern.free_length(),))
+        x = jax.random.normal(k, (model.params_pattern.get_free_length(),))
         np.testing.assert_allclose(f(x), old.log_prob_unconstrained(x), rtol=1e-8, atol=1e-5)
         if name not in OLD_GRADIENT_NAN:
             np.testing.assert_allclose(jax.grad(f)(x), old.grad_unconstrained(x), rtol=1e-7, atol=1e-6)
@@ -115,7 +116,7 @@ def test_matches_old_translation(name):
 def test_matches_stan(name):
     model = catalog.load(name)
     raw = load_data(load_posterior_info(name)["data_name"])
-    harness = StanComparisonHarness(stan_file_path(catalog.module_for(name).STAN_MODEL), raw)
+    harness = StanComparisonHarness(stan_file_path(catalog.find_module(name).STAN_MODEL), raw)
     report = assert_model_matches_stan(model, harness, n_synthetic=10, check_hessian=name not in NO_HESSIAN,
                                        scale=SYNTHETIC_SCALE.get(name, 1.0))
     if name in STAN_INACCURATE:
@@ -129,9 +130,9 @@ def test_matches_stan(name):
 @pytest.mark.parametrize("name", sorted(STAN_INACCURATE))
 def test_gradient_matches_finite_differences(name):
     model = catalog.load(name)
-    f = jax.jit(model.log_density_fn("joint", params_as="free"))
+    f = jax.jit(model.eval_free_log_joint)
     rng = np.random.default_rng(0)
-    x = rng.normal(size=model.params_pattern.free_length())
+    x = rng.normal(size=model.params_pattern.get_free_length())
     grad = np.asarray(jax.grad(f)(jnp.asarray(x)))
     step = 1e-5
     for i in rng.choice(x.size, size=10, replace=False):
@@ -148,7 +149,7 @@ def test_list_and_filter():
 
 
 def test_reference_draws():
-    draws = catalog.reference_draws("kidiq-kidscore_momiq")
+    draws = catalog.load_reference_draws("kidiq-kidscore_momiq")
     assert draws["beta"].shape[-1] == 2 and draws["beta"].shape[:2] == draws["sigma"].shape
-    idata = catalog.reference_draws("kidiq-kidscore_momiq", as_arviz=True)
-    assert "log_lik" in idata["log_likelihood"]
+    idata = pg.folded_draws_to_arviz(catalog.load("kidiq-kidscore_momiq").params_pattern, draws)
+    assert idata["posterior"]["beta"].shape[:2] == draws["sigma"].shape

@@ -4,7 +4,7 @@
     model = catalog.load("kidiq-kidscore_momiq")       # data loaded and converted
     for name in catalog.list_models(exchangeable=True):  # run a method across models
         run_method(catalog.load(name))
-    draws = catalog.reference_draws("kidiq-kidscore_momiq")  # gold-standard posterior draws
+    draws = catalog.load_reference_draws("kidiq-kidscore_momiq")  # gold-standard posterior draws
 
 Each module here translates one Stan model and lists the posteriors (data
 sets) it serves. This is the new-style counterpart of `posteriordb_jax.models`;
@@ -20,7 +20,7 @@ import jax.numpy as jnp
 
 import modelgami as mg
 
-from ..io import load_data, load_posterior_info, load_reference_draws
+from .. import io
 from ..stan_names import folded_draws_from_posteriordb
 
 _MODULES = [
@@ -143,7 +143,7 @@ _MODULES = [
 ]
 
 
-def _registry() -> Dict[str, object]:
+def _build_registry() -> Dict[str, object]:
     reg = {}
     for m in _MODULES:
         mod = importlib.import_module(f".{m}", __name__)
@@ -152,8 +152,8 @@ def _registry() -> Dict[str, object]:
     return reg
 
 
-def module_for(posterior_name: str):
-    reg = _registry()
+def find_module(posterior_name: str):
+    reg = _build_registry()
     if posterior_name not in reg:
         raise KeyError(f"{posterior_name!r} is not converted yet; available: {sorted(reg)}")
     return reg[posterior_name]
@@ -163,10 +163,10 @@ def load(posterior_name: str):
     """The `modelgami.Model` for a posteriordb posterior (e.g.
     "eight_schools-eight_schools_noncentered"), with its data loaded. Data
     lists become float64 arrays; each module casts its integer fields."""
-    mod = module_for(posterior_name)
-    info = load_posterior_info(posterior_name)
+    mod = find_module(posterior_name)
+    info = io.load_posterior_info(posterior_name)
     raw = {k: (jnp.asarray(v, dtype=jnp.float64) if isinstance(v, list) else v)
-           for k, v in load_data(info["data_name"]).items()}
+           for k, v in io.load_data(info["data_name"]).items()}
     model = mod.build(raw)
     model.name = posterior_name
     return model
@@ -175,16 +175,17 @@ def load(posterior_name: str):
 def list_models(exchangeable: Optional[bool] = None) -> List[str]:
     """Posterior names, optionally only those whose model is (or is not) a
     `modelgami.ExchangeableModel`."""
-    names = sorted(_registry())
+    names = sorted(_build_registry())
     if exchangeable is None:
         return names
     return [name for name in names if isinstance(load(name), mg.ExchangeableModel) == exchangeable]
 
 
-def reference_draws(posterior_name: str, as_arviz: bool = False):
+def load_reference_draws(posterior_name: str):
     """posteriordb's reference posterior draws, as a dict of folded arrays
-    with leading (chain, draw) axes (or an ArviZ object with `as_arviz`).
+    with leading (chain, draw) axes (`pg.folded_draws_to_arviz` turns them
+    into ArviZ data).
     Raises FileNotFoundError when posteriordb has none for this posterior."""
     model = load(posterior_name)
-    draws = folded_draws_from_posteriordb(model.params_pattern, load_reference_draws(posterior_name))
-    return model.to_arviz(draws) if as_arviz else draws
+    draws = folded_draws_from_posteriordb(model.params_pattern, io.load_reference_draws(posterior_name))
+    return draws

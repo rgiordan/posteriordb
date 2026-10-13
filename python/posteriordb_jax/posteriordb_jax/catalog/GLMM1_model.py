@@ -23,16 +23,16 @@ STAN_MODEL = "GLMM1_model"
 POSTERIORS = ["GLMM_data-GLMM1_model"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (jnp.sum(stats.norm.logpdf(params["alpha"], loc=params["mu_alpha"], scale=params["sd_alpha"]))
             + stats.norm.logpdf(params["mu_alpha"], loc=0.0, scale=10.0))
 
 
-def log_lik_one(params, datum, hyper):
+def eval_log_lik_one(datum, params, hyper):
     return stats.poisson.logpmf(datum["obs"], mu=jnp.exp(params["alpha"][datum["obssite"] - 1]))
 
 
-def sample_one(key, params, datum, hyper):
+def draw_one(key, datum, params, hyper):
     draw = jax.random.poisson(key, lam=jnp.exp(params["alpha"][datum["obssite"] - 1]))
     return {"obs": draw.astype(datum["obs"].dtype)}
 
@@ -45,7 +45,7 @@ def build(raw):
             mu_alpha=pg.NumericScalarPattern(),
             sd_alpha=pg.NumericScalarPattern(lb=0.0, ub=5.0),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
         data={"obs": jnp.asarray(raw["obs"], dtype=jnp.int32), "obssite": jnp.asarray(raw["obssite"], dtype=jnp.int32)},
     )

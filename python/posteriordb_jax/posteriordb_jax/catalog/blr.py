@@ -19,15 +19,15 @@ STAN_MODEL = "blr"
 POSTERIORS = ["sblri-blr", "sblrc-blr"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return jnp.sum(stats.norm.logpdf(params["beta"], loc=0.0, scale=10.0)) + stats.norm.logpdf(params["sigma"], loc=0.0, scale=10.0)
 
 
-def log_lik_one(params, datum, hyper):
+def eval_log_lik_one(datum, params, hyper):
     return stats.norm.logpdf(datum["y"], loc=datum["X"] @ params["beta"], scale=params["sigma"])
 
 
-def sample_one(key, params, datum, hyper):
+def draw_one(key, datum, params, hyper):
     return {"y": datum["X"] @ params["beta"] + params["sigma"] * jax.random.normal(key)}
 
 
@@ -37,6 +37,6 @@ def build(raw):
         params_pattern=pg.PatternDict(
             beta=pg.NumericVectorPattern(int(raw["D"])), sigma=pg.NumericScalarPattern(lb=0.0)),
         data={"y": raw["y"], "X": raw["X"]},
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
     )

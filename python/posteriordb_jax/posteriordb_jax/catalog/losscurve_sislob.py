@@ -28,41 +28,41 @@ from jax.scipy import stats
 import modelgami as mg
 import paragami as pg
 
-from ._distributions import lognormal_logpdf
+from ._distributions import eval_lognormal_logpdf
 
 STAN_MODEL = "losscurve_sislob"
 POSTERIORS = ["loss_curves-losscurve_sislob"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (stats.norm.logpdf(params["mu_LR"], loc=0.0, scale=0.5)
-            + lognormal_logpdf(params["sd_LR"], mu=0.0, sigma=0.5)
-            + jnp.sum(lognormal_logpdf(params["LR"], mu=params["mu_LR"], sigma=params["sd_LR"]))
-            + lognormal_logpdf(params["loss_sd"], mu=0.0, sigma=0.7)
-            + lognormal_logpdf(params["omega"], mu=0.0, sigma=0.5)
-            + lognormal_logpdf(params["theta"], mu=0.0, sigma=0.5))
+            + eval_lognormal_logpdf(params["sd_LR"], mu=0.0, sigma=0.5)
+            + jnp.sum(eval_lognormal_logpdf(params["LR"], mu=params["mu_LR"], sigma=params["sd_LR"]))
+            + eval_lognormal_logpdf(params["loss_sd"], mu=0.0, sigma=0.7)
+            + eval_lognormal_logpdf(params["omega"], mu=0.0, sigma=0.5)
+            + eval_lognormal_logpdf(params["theta"], mu=0.0, sigma=0.5))
 
 
-def growth_factor(*, t, omega, theta, weibull):
+def compute_growth_factor(*, t, omega, theta, weibull):
     t_omega = t**omega
     return jnp.where(weibull, 1.0 - jnp.exp(-((t / theta) ** omega)), t_omega / (t_omega + theta**omega))
 
 
-def mean_and_sd(*, params, datum, hyper):
+def compute_mean_and_sd(*, params, datum, hyper):
     cohort = datum["cohort_id"]
     premium = hyper["premium"][cohort]
-    gf = growth_factor(t=hyper["t_value"][datum["t_idx"]], omega=params["omega"], theta=params["theta"],
+    gf = compute_growth_factor(t=hyper["t_value"][datum["t_idx"]], omega=params["omega"], theta=params["theta"],
                        weibull=hyper["growthmodel_id"] == 1)
     return params["LR"][cohort] * premium * gf, params["loss_sd"] * premium
 
 
-def log_lik_one(params, datum, hyper):
-    mean, sd = mean_and_sd(params=params, datum=datum, hyper=hyper)
+def eval_log_lik_one(datum, params, hyper):
+    mean, sd = compute_mean_and_sd(params=params, datum=datum, hyper=hyper)
     return stats.norm.logpdf(datum["loss"], loc=mean, scale=sd)
 
 
-def sample_one(key, params, datum, hyper):
-    mean, sd = mean_and_sd(params=params, datum=datum, hyper=hyper)
+def draw_one(key, datum, params, hyper):
+    mean, sd = compute_mean_and_sd(params=params, datum=datum, hyper=hyper)
     return {"loss": mean + sd * jax.random.normal(key)}
 
 
@@ -77,8 +77,8 @@ def build(raw):
             sd_LR=pg.NumericScalarPattern(lb=0.0),
             loss_sd=pg.NumericScalarPattern(lb=0.0),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
         data={
             "loss": raw["loss"],
             "cohort_id": jnp.asarray(raw["cohort_id"], dtype=jnp.int32) - 1,

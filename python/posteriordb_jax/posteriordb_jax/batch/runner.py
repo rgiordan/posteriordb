@@ -102,7 +102,7 @@ def run_local(*, analysis: Callable, entries: Iterable[Entry], out_root: Path, o
     return states
 
 
-def statuses(out_root: Path) -> Dict[str, Dict]:
+def read_statuses(out_root: Path) -> Dict[str, Dict]:
     """The status record of every entry under `out_root`."""
     records = {}
     for path in sorted(Path(out_root).glob(f"*/{STATUS_FILE}")):

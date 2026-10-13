@@ -21,19 +21,19 @@ STAN_MODEL = "low_dim_gauss_mix"
 POSTERIORS = ["low_dim_gauss_mix-low_dim_gauss_mix"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (jnp.sum(stats.norm.logpdf(params["sigma"], loc=0.0, scale=2.0))
             + jnp.sum(stats.norm.logpdf(params["mu"], loc=0.0, scale=2.0))
             + stats.beta.logpdf(params["theta"], a=5.0, b=5.0))
 
 
-def log_lik_one(params, datum, hyper):
+def eval_log_lik_one(datum, params, hyper):
     mu, sigma, theta = params["mu"], params["sigma"], params["theta"]
     return jnp.logaddexp(jnp.log(theta) + stats.norm.logpdf(datum["y"], loc=mu[0], scale=sigma[0]),
                          jnp.log1p(-theta) + stats.norm.logpdf(datum["y"], loc=mu[1], scale=sigma[1]))
 
 
-def sample_one(key, params, datum, hyper):
+def draw_one(key, datum, params, hyper):
     k1, k2 = jax.random.split(key)
     z = jax.random.bernoulli(k1, p=params["theta"]).astype(int)
     comp = 1 - z  # component 0 with probability theta
@@ -49,6 +49,6 @@ def build(raw):
             theta=pg.NumericScalarPattern(lb=0.0, ub=1.0),
         ),
         data={"y": raw["y"]},
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
     )

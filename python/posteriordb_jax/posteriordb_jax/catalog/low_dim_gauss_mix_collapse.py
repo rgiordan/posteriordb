@@ -6,7 +6,7 @@ The prior and likelihood are the same functions.
 import modelgami as mg
 import paragami as pg
 
-from .low_dim_gauss_mix import log_lik_one, log_prior, sample_one
+from .low_dim_gauss_mix import eval_log_lik_one, eval_log_prior, draw_one
 
 STAN_MODEL = "low_dim_gauss_mix_collapse"
 POSTERIORS = ["low_dim_gauss_mix_collapse-low_dim_gauss_mix_collapse"]
@@ -21,6 +21,6 @@ def build(raw):
             theta=pg.NumericScalarPattern(lb=0.0, ub=1.0),
         ),
         data={"y": raw["y"]},
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
     )

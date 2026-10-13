@@ -29,7 +29,7 @@ STAN_MODEL = "irt_2pl"
 POSTERIORS = ["irt_2pl-irt_2pl"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     a = params["a"]
     lognormal_a = stats.norm.logpdf(jnp.log(a), loc=0.0, scale=params["sigma_a"]) - jnp.log(a)
     return (stats.cauchy.logpdf(params["sigma_theta"], loc=0.0, scale=2.0)
@@ -41,7 +41,7 @@ def log_prior(params, hyper):
             + jnp.sum(stats.norm.logpdf(params["b"], loc=params["mu_b"], scale=params["sigma_b"])))
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     logit_p = params["a"][:, None] * (params["theta"][None, :] - params["b"][:, None])
     return jnp.sum(data["y"] * logit_p - jax.nn.softplus(logit_p))
 
@@ -59,7 +59,7 @@ def build(raw):
             sigma_b=pg.NumericScalarPattern(lb=0.0),
             b=pg.NumericVectorPattern(i),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={"y": jnp.asarray(raw["y"], dtype=jnp.int32)},
     )

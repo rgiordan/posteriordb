@@ -21,17 +21,17 @@ STAN_MODEL = "GLM_Poisson_model"
 POSTERIORS = ["GLM_Poisson_Data-GLM_Poisson_model"]
 
 
-def log_lambda(params, datum):
+def compute_log_lambda(params, datum):
     year = datum["year"]
     return params["alpha"] + params["beta1"] * year + params["beta2"] * year**2 + params["beta3"] * year**3
 
 
-def log_lik_one(params, datum, hyper):
-    return stats.poisson.logpmf(datum["C"], mu=jnp.exp(log_lambda(params=params, datum=datum)))
+def eval_log_lik_one(datum, params, hyper):
+    return stats.poisson.logpmf(datum["C"], mu=jnp.exp(compute_log_lambda(params=params, datum=datum)))
 
 
-def sample_one(key, params, datum, hyper):
-    draw = jax.random.poisson(key, lam=jnp.exp(log_lambda(params=params, datum=datum)))
+def draw_one(key, datum, params, hyper):
+    draw = jax.random.poisson(key, lam=jnp.exp(compute_log_lambda(params=params, datum=datum)))
     return {"C": draw.astype(datum["C"].dtype)}
 
 
@@ -44,6 +44,6 @@ def build(raw):
             beta2=pg.NumericScalarPattern(lb=-10.0, ub=10.0),
             beta3=pg.NumericScalarPattern(lb=-10.0, ub=10.0),
         ),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
         data={"C": jnp.asarray(raw["C"], dtype=jnp.int32), "year": raw["year"]},
     )

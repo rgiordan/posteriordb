@@ -17,18 +17,18 @@ import jax.numpy as jnp
 import modelgami as mg
 import paragami as pg
 
-from ._capture import bernoulli_log_lik, log_lik_augmented, sample_history
+from ._capture import eval_bernoulli_log_lik, eval_log_lik_augmented, sample_history
 
 STAN_MODEL = "Mt_model"
 POSTERIORS = ["Mt_data-Mt_model"]
 
 
-def log_lik_one(params, datum, hyper):
-    captures = bernoulli_log_lik(y=datum["y"], p=params["p"])
-    return log_lik_augmented(omega=params["omega"], log_lik_captures=captures, captured=jnp.sum(datum["y"]) > 0)
+def eval_log_lik_one(datum, params, hyper):
+    captures = eval_bernoulli_log_lik(y=datum["y"], p=params["p"])
+    return eval_log_lik_augmented(omega=params["omega"], log_lik_captures=captures, captured=jnp.sum(datum["y"]) > 0)
 
 
-def sample_one(key, params, datum, hyper):
+def draw_one(key, datum, params, hyper):
     return {"y": sample_history(key=key, omega=params["omega"], p=params["p"])}
 
 
@@ -39,6 +39,6 @@ def build(raw):
             omega=pg.NumericScalarPattern(lb=0.0, ub=1.0),
             p=pg.NumericVectorPattern(int(raw["T"]), lb=0.0, ub=1.0),
         ),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
         data={"y": jnp.asarray(raw["y"], dtype=jnp.int32)},
     )

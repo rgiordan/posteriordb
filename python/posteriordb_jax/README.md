@@ -26,8 +26,8 @@ under `python/`:
 Converted so far (116 Stan models, 143 posteriors): `2pl_latent_reg_irt`, `accel_gp`, `accel_splines`, `arK`, `arma11`, `blr`, `bones_model`, `bym2_offset_only`, `covid19imperial_v2`, `covid19imperial_v3`, `diamonds`, `dogs`, `dogs_hierarchical`, `dogs_log`, `dogs_nonhierarchical`, `dugongs_model`, `earn_height`, `eight_schools_centered`, `eight_schools_noncentered`, `election88_full`, `garch11`, `GLM_Binomial_model`, `GLM_Poisson_model`, `GLMM1_model`, `GLMM_Poisson_model`, `gp_pois_regr`, `gp_regr`, `gpcm_latent_reg_irt`, `grsm_latent_reg_irt`, `hier_2pl`, `hierarchical_gp`, `hmm_drive_0`, `hmm_drive_1`, `hmm_example`, `hmm_gaussian`, `iohmm_reg`, `irt_2pl`, `kidscore_interaction`, `kidscore_interaction_c`, `kidscore_interaction_c2`, `kidscore_interaction_z`, `kidscore_mom_work`, `kidscore_momhs`, `kidscore_momhsiq`, `kidscore_momiq`, `kilpisjarvi`, `kronecker_gp`, `ldaK2`, `ldaK5`, `log10earn_height`, `logearn_height`, `logearn_height_male`, `logearn_interaction`, `logearn_interaction_z`, `logearn_logheight_male`, `logistic_regression_rhs`, `logmesquite`, `logmesquite_logva`, `logmesquite_logvas`, `logmesquite_logvash`, `logmesquite_logvolume`, `losscurve_sislob`, `low_dim_gauss_mix`, `low_dim_gauss_mix_collapse`, `lsat_model`, `M0_model`, `Mb_model`, `mesquite`, `Mh_model`, `Mt_model`, `Mtbh_model`, `Mth_model`, `multi_occupancy`, `nes`, `nes_logit_model`, `nn_rbm1bJ10`, `nn_rbm1bJ100`, `normal_mixture`, `normal_mixture_k`, `pilots`, `prophet`, `radon_county`, `radon_county_intercept`, `radon_hierarchical_intercept_centered`, `radon_hierarchical_intercept_noncentered`, `radon_partially_pooled_centered`, `radon_partially_pooled_noncentered`, `radon_pooled`, `radon_variable_intercept_centered`, `radon_variable_intercept_noncentered`, `radon_variable_intercept_slope_centered`, `radon_variable_intercept_slope_noncentered`, `radon_variable_slope_centered`, `radon_variable_slope_noncentered`, `Rate_1_model`, `Rate_2_model`, `Rate_3_model`, `Rate_4_model`, `Rate_5_model`, `rats_model`, `seeds_centered_model`, `seeds_model`, `seeds_stanified_model`, `sesame_one_pred_a`, `state_space_stochastic_level_stochastic_seasonal`, `surgical_model`, `Survey_model`, `wells_daae_c_model`, `wells_dae_c_model`, `wells_dae_inter_model`, `wells_dae_model`, `wells_dist`, `wells_dist100_model`, `wells_dist100ars_model`, `wells_interaction_c_model`, `wells_interaction_model`.
 
 - The new versions use `jax.scipy.stats` instead of TFP and separate the prior from the likelihood.
-- Wherever the data are exchangeable, they use `log_lik_one`. Models with a parameter per observation or a time-series or GP likelihood (eight schools, seeds, surgical, irt_2pl, hier_2pl, lsat, bones, bym2, dogs_nonhierarchical, the hidden Markov models, the latent-regression IRT models, state_space_stochastic_level_stochastic_seasonal, kronecker_gp, multi_occupancy, covid19imperial, garch11, GLMM_Poisson_model, Mh/Mth/Mtbh, arK, arma11, the GPs, Survey and the Rate models) are plain `Model`s; the rest are `ExchangeableModel`s. In grouped models (radon, rats, pilots, election88, the LDA models) each observation is a datum that carries its group indices.
-- The linear and logistic regressions share `catalog/_regression.py` (`normal_regression`, `logistic_regression`), so each of those is a feature function and a response.
+- Wherever the data are exchangeable, they use `eval_log_lik_one(datum, params, hyper)`. Models with a parameter per observation or a time-series or GP likelihood (eight schools, seeds, surgical, irt_2pl, hier_2pl, lsat, bones, bym2, dogs_nonhierarchical, the hidden Markov models, the latent-regression IRT models, state_space_stochastic_level_stochastic_seasonal, kronecker_gp, multi_occupancy, covid19imperial, garch11, GLMM_Poisson_model, Mh/Mth/Mtbh, arK, arma11, the GPs, Survey and the Rate models) are plain `Model`s; the rest are `ExchangeableModel`s. In grouped models (radon, rats, pilots, election88, the LDA models) each observation is a datum that carries its group indices.
+- The linear and logistic regressions share `catalog/_regression.py` (`build_normal_regression`, `build_logistic_regression`), so each of those is a feature function and a response.
 - `tests/test_catalog.py` checks each model against BridgeStan, against the old translation, and against the modelgami contract. The BridgeStan check uses scaled errors, |jax − stan| / (1 + |stan|), so one set of tolerances fits every model. Log densities and gradients agree to about 1e-14 or better.
 
 Every model in `posteriordb_jax/models/` now has a catalog version; the old translations stay as the reference for `test_matches_old_translation`. Models posteriordb has that never had an old translation are checked against BridgeStan only. garch11's beta1 has an upper bound that depends on alpha1, so its file defines a small custom `Garch11Pattern`. Still missing: the four ODE models (lotka_volterra, one_comp_mm_elim_abs, sir, soil_incubation), which need an ODE solver.
@@ -41,8 +41,8 @@ Every model in `posteriordb_jax/models/` now has a catalog version; the old tran
 from functools import partial
 from posteriordb_jax.batch import analyses
 
-mcmc = partial(analyses.mcmc, n_warmup=1000, n_draws=1000)
-bootstrap = partial(analyses.bootstrap_mcmc, weights=partial(analyses.multinomial_weights, n_replicates=20))
+mcmc = partial(analyses.run_mcmc, n_warmup=1000, n_draws=1000)
+bootstrap = partial(analyses.run_bootstrap_mcmc, n_replicates=20)
 ```
 
 ```bash
@@ -54,7 +54,7 @@ python -m posteriordb_jax.batch status --out results/mcmc --verbose
 ```
 
 - Results go to `<out>/<posterior>/`, with a `status.json` recording "done", "failed" (with the traceback) or "not_applicable" (the analysis raised `NotApplicable`, e.g. a bootstrap of non-exchangeable data). Finished posteriors are skipped on later runs, so resubmitting reruns only the rest; `--overwrite` reruns everything.
-- `analyses.mcmc` runs NUTS (BlackJAX, `pip install -e ".[mcmc]"`) and writes `draws.npz` and `summary.json`, including the largest discrepancy from posteriordb's reference means where those exist. `analyses.bootstrap_mcmc` runs NUTS once per row of weights that your function returns for each posterior (shape `(n_obs,)` or `(n_replicates, n_obs)`), compiling the sampler once.
+- `analyses.run_mcmc` runs NUTS (BlackJAX, `pip install -e ".[mcmc]"`) and writes `draws.npz` and `summary.json`, including the largest discrepancy from posteriordb's reference means where those exist. `analyses.run_bootstrap_mcmc` runs NUTS once per bootstrap replicate, compiling the sampler once. By default the weights are `mg.draw_np_bootstrap_weights` draws; pass `draw_weights=f`, where `f(entry)` returns an array of shape `(n_obs,)` or `(n_replicates, n_obs)`, to use your own.
 - Select posteriors with `--posteriors`, `--exchangeable`, `--with-reference-draws` and `--only-unfinished`; see `python -m posteriordb_jax.batch submit --help` for the Slurm options. `examples/batch_analyses.py` has more examples, including custom weights and a custom analysis.
 
 
@@ -62,9 +62,9 @@ python -m posteriordb_jax.batch status --out results/mcmc --verbose
 from posteriordb_jax import catalog
 
 model = catalog.load("kidiq-kidscore_momiq")            # a modelgami.Model, data loaded
-f = model.log_density_fn("joint", params_as="free")       # Stan-exact log density
+f = model.eval_free_log_joint                             # Stan-exact log density
 catalog.list_models(exchangeable=True)                    # filter posteriors by capability
-draws = catalog.reference_draws("kidiq-kidscore_momiq")   # posteriordb's reference draws
+draws = catalog.load_reference_draws("kidiq-kidscore_momiq")   # posteriordb's reference draws
 ```
 
 Install for development (from `python/`): `pip install -e paragami -e modelgami -e "posteriordb_jax[test]"`. The catalog alone needs neither TensorFlow Probability nor BridgeStan; they are the `legacy` and `stan` extras.

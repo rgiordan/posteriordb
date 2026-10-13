@@ -170,7 +170,7 @@ def assert_model_matches_stan(
 ) -> ComparisonReport:
     """`assert_matches_stan` for new-style `modelgami.Model`s: the same
     unconstrained vector goes to BridgeStan and to
-    `model.log_density_fn("joint", params_as="free")`. Constrained values are matched
+    `model.eval_free_log_joint`. Constrained values are matched
     by Stan's element names, so array layout never matters; the free
     vector's layout must match Stan's (pattern order = Stan's `parameters`
     block order).
@@ -178,11 +178,11 @@ def assert_model_matches_stan(
     Errors are *scaled*: |jax - stan| / (1 + |stan|), elementwise, so one
     set of tolerances works for models with large data magnitudes or N
     (where absolute float64 noise grows with the size of the quantity)."""
-    free_length = model.params_pattern.free_length()
+    free_length = model.params_pattern.get_free_length()
     assert harness.param_unc_num() == free_length, (
         f"free dim mismatch: Stan={harness.param_unc_num()} vs model={free_length}"
     )
-    f = jax.jit(model.log_density_fn("joint", params_as="free"))
+    f = jax.jit(model.eval_free_log_joint)
     grad = jax.jit(jax.grad(f))
     hess = jax.jit(jax.hessian(f))
     names = harness.param_names()

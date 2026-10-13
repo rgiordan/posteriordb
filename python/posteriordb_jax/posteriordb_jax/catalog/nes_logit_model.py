@@ -7,21 +7,21 @@
 
 import jax.numpy as jnp
 
-from ._regression import logistic_regression
+from ._regression import build_logistic_regression
 
 STAN_MODEL = "nes_logit_model"
 POSTERIORS = ["nes_logit_data-nes_logit_model"]
 
 
-def features(d, hyper):
+def compute_features(d, hyper):
     return jnp.stack([d["income"]])
 
 
 def build(raw):
-    return logistic_regression(
+    return build_logistic_regression(
         name=STAN_MODEL,
         data={"vote": raw["vote"], "income": raw["income"]},
         n_features=1,
-        features=features,
+        compute_features=compute_features,
         response_field="vote",
     )

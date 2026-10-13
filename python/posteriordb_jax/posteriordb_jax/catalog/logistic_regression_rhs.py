@@ -26,7 +26,7 @@ from jax.scipy import stats
 import modelgami as mg
 import paragami as pg
 
-from ._distributions import inv_gamma_logpdf
+from ._distributions import eval_inv_gamma_logpdf
 
 STAN_MODEL = "logistic_regression_rhs"
 POSTERIORS = ["ovarian-logistic_regression_rhs", "prostate-logistic_regression_rhs"]
@@ -34,15 +34,15 @@ POSTERIORS = ["ovarian-logistic_regression_rhs", "prostate-logistic_regression_r
 HYPER_NAMES = ["scale_icept", "scale_global", "nu_global", "nu_local", "slab_scale", "slab_df"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (jnp.sum(stats.norm.logpdf(params["z"], loc=0.0, scale=1.0))
             + jnp.sum(stats.t.logpdf(params["lambda"], df=hyper["nu_local"], loc=0.0, scale=1.0))
             + stats.t.logpdf(params["tau"], df=hyper["nu_global"], loc=0.0, scale=2.0 * hyper["scale_global"])
-            + inv_gamma_logpdf(params["caux"], a=0.5 * hyper["slab_df"], b=0.5 * hyper["slab_df"])
+            + eval_inv_gamma_logpdf(params["caux"], a=0.5 * hyper["slab_df"], b=0.5 * hyper["slab_df"])
             + stats.norm.logpdf(params["beta0"], loc=0.0, scale=hyper["scale_icept"]))
 
 
-def beta(params, hyper):
+def compute_beta(params, hyper):
     """The transformed parameter beta (regularized horseshoe coefficients)."""
     c2 = hyper["slab_scale"] ** 2 * params["caux"]
     lambda2 = params["lambda"] ** 2
@@ -50,13 +50,13 @@ def beta(params, hyper):
     return params["z"] * lambda_tilde * params["tau"]
 
 
-def log_lik_one(params, datum, hyper):
-    eta = params["beta0"] + datum["x"] @ beta(params=params, hyper=hyper)
+def eval_log_lik_one(datum, params, hyper):
+    eta = params["beta0"] + datum["x"] @ compute_beta(params=params, hyper=hyper)
     return datum["y"] * eta - jax.nn.softplus(eta)
 
 
-def sample_one(key, params, datum, hyper):
-    p = jax.nn.sigmoid(params["beta0"] + datum["x"] @ beta(params=params, hyper=hyper))
+def draw_one(key, datum, params, hyper):
+    p = jax.nn.sigmoid(params["beta0"] + datum["x"] @ compute_beta(params=params, hyper=hyper))
     return {"y": jax.random.bernoulli(key, p=p).astype(datum["y"].dtype)}
 
 
@@ -72,8 +72,8 @@ def build(raw):
             **{"lambda": pg.NumericVectorPattern(d, lb=0.0)},
             caux=pg.NumericScalarPattern(lb=0.0),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
         data={"y": jnp.asarray(raw["y"], dtype=jnp.int32), "x": raw["x"]},
         hyper={k: float(raw[k]) for k in HYPER_NAMES},
     )

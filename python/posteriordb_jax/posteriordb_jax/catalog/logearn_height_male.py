@@ -5,27 +5,27 @@
 
 import jax.numpy as jnp
 
-from ._regression import normal_regression, ones_and
+from ._regression import build_normal_regression, prepend_ones
 
 STAN_MODEL = "logearn_height_male"
 POSTERIORS = ['earnings-logearn_height_male']
 
 
-def features(d, hyper):
-    return ones_and(d["height"], d["male"])
+def compute_features(d, hyper):
+    return prepend_ones(d["height"], d["male"])
 
 
-def response(d):
+def compute_response(d):
     return jnp.log(d["earn"])
 
 
 def build(raw):
-    return normal_regression(
+    return build_normal_regression(
         name=STAN_MODEL,
         data={"earn": raw["earn"], "height": raw["height"], "male": raw["male"]},
         n_features=3,
-        features=features,
-        response=response,
+        compute_features=compute_features,
+        compute_response=compute_response,
         response_field="earn",
-        inverse_response=jnp.exp,
+        invert_response=jnp.exp,
     )

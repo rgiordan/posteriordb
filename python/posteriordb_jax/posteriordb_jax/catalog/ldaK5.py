@@ -11,11 +11,11 @@ parameters alpha and beta come with the data):
 Exchangeable: each word token is one datum carrying its word and document.
 """
 
-from ._lda import lda_model
+from ._lda import build_lda_model
 
 STAN_MODEL = "ldaK5"
 POSTERIORS = ["prideprejudice_chapter-ldaK5", "prideprejudice_paragraph-ldaK5"]
 
 
 def build(raw):
-    return lda_model(name=STAN_MODEL, raw=raw, n_topics=5, alpha=raw["alpha"], beta=raw["beta"])
+    return build_lda_model(name=STAN_MODEL, raw=raw, n_topics=5, alpha=raw["alpha"], beta=raw["beta"])

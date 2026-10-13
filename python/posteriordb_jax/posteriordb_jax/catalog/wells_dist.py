@@ -14,17 +14,17 @@ STAN_MODEL = "wells_dist"
 POSTERIORS = ["wells_data-wells_dist"]
 
 
-def _logit(params, datum):
+def _compute_logit(params, datum):
     return params["beta"][0] + params["beta"][1] * datum["dist"]
 
 
-def log_lik_one(params, datum, hyper):
-    logit = _logit(params=params, datum=datum)
+def eval_log_lik_one(datum, params, hyper):
+    logit = _compute_logit(params=params, datum=datum)
     return datum["switched"] * logit - jax.nn.softplus(logit)
 
 
-def sample_one(key, params, datum, hyper):
-    return {"switched": jax.random.bernoulli(key, p=jax.nn.sigmoid(_logit(params=params, datum=datum))).astype(datum["switched"].dtype)}
+def draw_one(key, datum, params, hyper):
+    return {"switched": jax.random.bernoulli(key, p=jax.nn.sigmoid(_compute_logit(params=params, datum=datum))).astype(datum["switched"].dtype)}
 
 
 def build(raw):
@@ -32,5 +32,5 @@ def build(raw):
         name=STAN_MODEL,
         params_pattern=pg.PatternDict(beta=pg.NumericVectorPattern(2)),
         data={"switched": jnp.asarray(raw["switched"], dtype=jnp.int32), "dist": raw["dist"]},
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
     )

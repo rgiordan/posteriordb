@@ -24,22 +24,22 @@ from jax.scipy.special import logit
 import modelgami as mg
 import paragami as pg
 
-from ._capture import log_lik_augmented
-from ._distributions import binomial_logit_logpmf
+from ._capture import eval_log_lik_augmented
+from ._distributions import eval_binomial_logit_logpmf
 
 STAN_MODEL = "Mh_model"
 POSTERIORS = ["Mh_data-Mh_model"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return jnp.sum(stats.norm.logpdf(params["eps_raw"], loc=0.0, scale=1.0))
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     y, t = data["y"], hyper["T"]
     eps = logit(params["mean_p"]) + params["sigma"] * params["eps_raw"]
-    captures = binomial_logit_logpmf(y, n=t, logit_p=eps)
-    return jnp.sum(log_lik_augmented(omega=params["omega"], log_lik_captures=captures, captured=y > 0))
+    captures = eval_binomial_logit_logpmf(y, n=t, logit_p=eps)
+    return jnp.sum(eval_log_lik_augmented(omega=params["omega"], log_lik_captures=captures, captured=y > 0))
 
 
 def build(raw):
@@ -52,8 +52,8 @@ def build(raw):
             sigma=pg.NumericScalarPattern(lb=0.0, ub=5.0),
             eps_raw=pg.NumericVectorPattern(m),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={"y": jnp.asarray(raw["y"], dtype=jnp.int32)},
         hyper={"T": int(raw["T"])},
     )

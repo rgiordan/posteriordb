@@ -27,7 +27,7 @@ STAN_MODEL = "prophet"
 POSTERIORS = ["rstan_downloads-prophet"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (stats.norm.logpdf(params["k"], loc=0.0, scale=5.0)
             + stats.norm.logpdf(params["m"], loc=0.0, scale=5.0)
             + jnp.sum(stats.laplace.logpdf(params["delta"], loc=0.0, scale=hyper["tau"]))
@@ -35,7 +35,7 @@ def log_prior(params, hyper):
             + jnp.sum(stats.norm.logpdf(params["beta"], loc=0.0, scale=hyper["sigmas"])))
 
 
-def mean(*, params, datum, hyper):
+def compute_mean(*, params, datum, hyper):
     t, delta = datum["t"], params["delta"]
     after_change = t >= hyper["t_change"]   # this time's row of A
     trend = (params["k"] + after_change @ delta) * t + params["m"] - after_change @ (hyper["t_change"] * delta)
@@ -43,12 +43,12 @@ def mean(*, params, datum, hyper):
     return trend * (1.0 + x @ (params["beta"] * hyper["s_m"])) + x @ (params["beta"] * hyper["s_a"])
 
 
-def log_lik_one(params, datum, hyper):
-    return stats.norm.logpdf(datum["y"], loc=mean(params=params, datum=datum, hyper=hyper), scale=params["sigma_obs"])
+def eval_log_lik_one(datum, params, hyper):
+    return stats.norm.logpdf(datum["y"], loc=compute_mean(params=params, datum=datum, hyper=hyper), scale=params["sigma_obs"])
 
 
-def sample_one(key, params, datum, hyper):
-    return {"y": mean(params=params, datum=datum, hyper=hyper) + params["sigma_obs"] * jax.random.normal(key)}
+def draw_one(key, datum, params, hyper):
+    return {"y": compute_mean(params=params, datum=datum, hyper=hyper) + params["sigma_obs"] * jax.random.normal(key)}
 
 
 def build(raw):
@@ -63,8 +63,8 @@ def build(raw):
             sigma_obs=pg.NumericScalarPattern(lb=0.0),
             beta=pg.NumericVectorPattern(int(raw["K"])),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
         data={"t": raw["t"], "y": raw["y"], "X": raw["X"]},
         hyper={field: raw[field] for field in ("t_change", "tau", "sigmas", "s_a", "s_m")},
     )

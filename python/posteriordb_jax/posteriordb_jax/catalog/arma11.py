@@ -26,14 +26,14 @@ STAN_MODEL = "arma11"
 POSTERIORS = ["arma-arma11"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (stats.norm.logpdf(params["mu"], loc=0.0, scale=10.0)
             + stats.norm.logpdf(params["phi"], loc=0.0, scale=2.0)
             + stats.norm.logpdf(params["theta"], loc=0.0, scale=2.0)
             + stats.cauchy.logpdf(params["sigma"], loc=0.0, scale=2.5))
 
 
-def errors(params, y):
+def compute_errors(params, y):
     mu, phi, theta = params["mu"], params["phi"], params["theta"]
     err_1 = y[0] - (mu + phi * mu)
 
@@ -46,8 +46,8 @@ def errors(params, y):
     return jnp.concatenate([err_1[None], err_rest])
 
 
-def log_lik(params, data, hyper):
-    err = errors(params=params, y=data["y"])
+def eval_log_lik(data, params, hyper):
+    err = compute_errors(params=params, y=data["y"])
     return jnp.sum(stats.norm.logpdf(err, loc=0.0, scale=params["sigma"]))
 
 
@@ -60,7 +60,7 @@ def build(raw):
             theta=pg.NumericScalarPattern(),
             sigma=pg.NumericScalarPattern(lb=0.0),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={"y": raw["y"]},
     )

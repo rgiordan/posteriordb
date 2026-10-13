@@ -19,11 +19,11 @@ STAN_MODEL = "normal_mixture"
 POSTERIORS = ["normal_2-normal_mixture"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return stats.uniform.logpdf(params["theta"], loc=0.0, scale=1.0) + jnp.sum(stats.norm.logpdf(params["mu"], loc=0.0, scale=10.0))
 
 
-def log_lik_one(params, datum, hyper):
+def eval_log_lik_one(datum, params, hyper):
     mu, theta = params["mu"], params["theta"]
     return jnp.logaddexp(jnp.log(theta) + stats.norm.logpdf(datum["y"], loc=mu[0], scale=1.0),
                          jnp.log1p(-theta) + stats.norm.logpdf(datum["y"], loc=mu[1], scale=1.0))
@@ -37,6 +37,6 @@ def build(raw):
             mu=pg.NumericVectorPattern(2),
         ),
         data={"y": raw["y"]},
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one),
     )

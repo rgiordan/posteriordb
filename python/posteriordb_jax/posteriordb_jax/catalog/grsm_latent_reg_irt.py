@@ -30,25 +30,25 @@ from jax.scipy import stats
 import modelgami as mg
 import paragami as pg
 
-from ._latent_reg_irt import (adjusted_covariates, categorical_steps_logpmf, log_prior_alpha_lambda, sum_to_zero,
-                              theta_log_density)
+from ._latent_reg_irt import (adjust_covariates, eval_categorical_steps_logpmf, eval_log_prior_alpha_lambda, sum_to_zero,
+                              eval_theta_log_density)
 
 STAN_MODEL = "grsm_latent_reg_irt"
 POSTERIORS = ["science_irt-grsm_latent_reg_irt"]
 
 
-def log_prior(params, hyper):
-    return (log_prior_alpha_lambda(params)
+def eval_log_prior(params, hyper):
+    return (eval_log_prior_alpha_lambda(params)
             + jnp.sum(stats.norm.logpdf(sum_to_zero(params["beta_free"]), loc=0.0, scale=3.0))
             + jnp.sum(stats.norm.logpdf(sum_to_zero(params["kappa_free"]), loc=0.0, scale=3.0)))
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     ii = data["ii"]
     eta = params["theta"][data["jj"]] * params["alpha"][ii] - sum_to_zero(params["beta_free"])[ii]
     steps = eta[:, None] - sum_to_zero(params["kappa_free"])[None, :]
-    return (theta_log_density(params=params, data=data)
-            + jnp.sum(categorical_steps_logpmf(y=data["y"], steps=steps)))
+    return (eval_theta_log_density(params=params, data=data)
+            + jnp.sum(eval_categorical_steps_logpmf(y=data["y"], steps=steps)))
 
 
 def build(raw):
@@ -63,12 +63,12 @@ def build(raw):
             theta=pg.NumericVectorPattern(n_persons),
             lambda_adj=pg.NumericVectorPattern(n_covariates),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={
             "ii": jnp.asarray(raw["ii"], dtype=jnp.int32) - 1,
             "jj": jnp.asarray(raw["jj"], dtype=jnp.int32) - 1,
             "y": y,
-            "w_adj": adjusted_covariates(raw["W"]),
+            "w_adj": adjust_covariates(raw["W"]),
         },
     )

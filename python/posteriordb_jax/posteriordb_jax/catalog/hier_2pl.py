@@ -25,27 +25,27 @@ from jax.scipy import stats
 import modelgami as mg
 import paragami as pg
 
-from ._distributions import lkj_corr_cholesky_logpdf
+from ._distributions import eval_lkj_corr_cholesky_logpdf
 
 STAN_MODEL = "hier_2pl"
 POSTERIORS = ["sat-hier_2pl"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     xi = jnp.stack([params["xi1"], params["xi2"]], axis=1)               # (I, 2)
     l_sigma = params["tau"][:, None] * params["L_Omega"]
     cov = l_sigma @ l_sigma.T
     mu, tau = params["mu"], params["tau"]
     return (jnp.sum(stats.multivariate_normal.logpdf(xi, mean=mu, cov=cov))
             + jnp.sum(stats.norm.logpdf(params["theta"], loc=0.0, scale=1.0))
-            + lkj_corr_cholesky_logpdf(params["L_Omega"], eta=4.0)
+            + eval_lkj_corr_cholesky_logpdf(params["L_Omega"], eta=4.0)
             + stats.norm.logpdf(mu[0], loc=0.0, scale=1.0)
             + stats.expon.logpdf(tau[0], scale=10.0)
             + stats.norm.logpdf(mu[1], loc=0.0, scale=5.0)
             + stats.expon.logpdf(tau[1], scale=10.0))
 
 
-def log_lik(params, data, hyper):
+def eval_log_lik(data, params, hyper):
     item, person = data["ii"] - 1, data["jj"] - 1
     logit_p = jnp.exp(params["xi1"][item]) * (params["theta"][person] - params["xi2"][item])
     return jnp.sum(data["y"] * logit_p - jax.nn.softplus(logit_p))
@@ -63,7 +63,7 @@ def build(raw):
             tau=pg.NumericVectorPattern(2, lb=0.0),
             L_Omega=pg.CholeskyCorrPattern(2),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
         data={key: jnp.asarray(raw[key], dtype=jnp.int32) for key in ("ii", "jj", "y")},
     )

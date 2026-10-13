@@ -24,14 +24,14 @@ STAN_MODEL = "seeds_stanified_model"
 POSTERIORS = ["seeds_data-seeds_stanified_model"]
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     return (sum(stats.norm.logpdf(params[k], loc=0.0, scale=1.0) for k in ("alpha0", "alpha1", "alpha2", "alpha12"))
             + stats.cauchy.logpdf(params["sigma"], loc=0.0, scale=1.0)
             + jnp.sum(stats.norm.logpdf(params["b"], loc=0.0, scale=params["sigma"])))
 
 
-def log_lik(params, data, hyper):
-    return _seeds.log_lik(params=params, b=params["b"], data=data)
+def eval_log_lik(data, params, hyper):
+    return _seeds.eval_log_lik(params=params, b=params["b"], data=data)
 
 
 def build(raw):
@@ -45,7 +45,7 @@ def build(raw):
             b=pg.NumericVectorPattern(int(raw["I"])),
             sigma=pg.NumericScalarPattern(lb=0.0),
         ),
-        prior=mg.DGP(log_density=log_prior),
-        likelihood=mg.DGP(log_density=log_lik),
-        data=_seeds.data_from(raw),
+        prior=mg.DGP(eval_log_density=eval_log_prior),
+        likelihood=mg.DGP(eval_log_density=eval_log_lik),
+        data=_seeds.extract_data(raw),
     )

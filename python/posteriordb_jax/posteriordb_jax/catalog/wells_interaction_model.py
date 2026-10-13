@@ -11,22 +11,22 @@
 
 import jax.numpy as jnp
 
-from ._regression import logistic_regression
+from ._regression import build_logistic_regression
 
 STAN_MODEL = "wells_interaction_model"
 POSTERIORS = ["wells_data-wells_interaction_model"]
 
 
-def features(d, hyper):
+def compute_features(d, hyper):
     dist100 = d["dist"] / 100.0
     return jnp.stack([dist100, d["arsenic"], dist100 * d["arsenic"]])
 
 
 def build(raw):
-    return logistic_regression(
+    return build_logistic_regression(
         name=STAN_MODEL,
         data={"switched": raw["switched"], "dist": raw["dist"], "arsenic": raw["arsenic"]},
         n_features=3,
-        features=features,
+        compute_features=compute_features,
         response_field="switched",
     )
