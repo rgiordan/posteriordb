@@ -15,10 +15,10 @@ Usage:
     X, y = cr.simulate_data(jax.random.PRNGKey(0), n=100, p=3)
     model = cr.make_model(X, y)
 
-    f = model.log_density_fn("joint", params_as="free")   # for HMC, VI, Laplace, ...
-    model.log_lik_pointwise(params)                        # per-observation terms
-    model.log_lik(params, weights=w)                       # weighted likelihood
-    model.sample_prior(key), model.sample_data(key, params)  # simulation
+    model.eval_free_log_joint(x)                     # for HMC, VI, Laplace, ...
+    model.eval_log_lik_singleobs(params)             # single-observation terms
+    model.eval_log_joint(params, weights=w)          # weighted
+    model.draw_prior(key), model.draw_joint(key)     # simulation
 """
 
 from __future__ import annotations
@@ -36,28 +36,28 @@ import paragami as pg
 # ----------------------------------------------------------------------------
 
 
-def params_pattern(p: int) -> pg.PatternDict:
+def make_params_pattern(p: int) -> pg.PatternDict:
     return pg.PatternDict(
         beta=pg.NumericVectorPattern(p),
         sigma2=pg.NumericScalarPattern(lb=0.0),
     )
 
 
-def default_hyper(p: int):
+def make_default_hyper(p: int):
     return {"m0": jnp.zeros(p), "V0": 10.0 * jnp.eye(p), "a0": 2.0, "b0": 2.0}
 
 
-def log_inv_gamma(x, a, b):
+def eval_log_inv_gamma(x, a, b):
     return a * jnp.log(b) - gammaln(a) - (a + 1) * jnp.log(x) - b / x
 
 
-def log_prior(params, hyper):
+def eval_log_prior(params, hyper):
     beta, sigma2 = params["beta"], params["sigma2"]
     return (stats.multivariate_normal.logpdf(beta, hyper["m0"], sigma2 * hyper["V0"])
-            + log_inv_gamma(sigma2, hyper["a0"], hyper["b0"]))
+            + eval_log_inv_gamma(sigma2, hyper["a0"], hyper["b0"]))
 
 
-def sample_prior(key, hyper):
+def draw_prior(key, hyper):
     k1, k2 = jax.random.split(key)
     sigma2 = hyper["b0"] / jax.random.gamma(k1, hyper["a0"])
     chol = jnp.linalg.cholesky(hyper["V0"])
@@ -65,13 +65,13 @@ def sample_prior(key, hyper):
     return {"beta": beta, "sigma2": sigma2}
 
 
-def log_lik_one(params, datum, hyper):
+def eval_log_lik_one(datum, params, hyper):
     """One observation: datum = {"x": (p,), "y": ()}."""
     mean = datum["x"] @ params["beta"]
     return stats.norm.logpdf(datum["y"], mean, jnp.sqrt(params["sigma2"]))
 
 
-def sample_one(key, params, datum, hyper):
+def draw_one(key, datum, params, hyper):
     """Draw a new y for one observation; its covariates x are kept."""
     mean = datum["x"] @ params["beta"]
     return {"y": mean + jnp.sqrt(params["sigma2"]) * jax.random.normal(key)}
@@ -81,29 +81,29 @@ def make_model(X, y, hyper=None) -> mg.ExchangeableModel:
     p = X.shape[1]
     return mg.ExchangeableModel(
         name="conjugate_regression",
-        params_pattern=params_pattern(p),
-        prior=mg.DGP(log_density=log_prior, sample=sample_prior),
-        likelihood=mg.ExchangeableDGP(log_density_one=log_lik_one, sample_one=sample_one),
+        params_pattern=make_params_pattern(p),
+        prior=mg.DGP(eval_log_density=eval_log_prior, draw=draw_prior),
+        likelihood=mg.ExchangeableDGP(eval_log_density_one=eval_log_lik_one, draw_one=draw_one),
         data={"x": X, "y": y},  # N observations: every field has a leading N axis
-        hyper=default_hyper(p) if hyper is None else hyper,
+        hyper=make_default_hyper(p) if hyper is None else hyper,
     )
 
 
 # The same prior and likelihood as classes. Equivalent; use whichever reads better.
 class NormalInverseGammaPrior(mg.DGP):
-    def log_density(self, params, hyper):
-        return log_prior(params, hyper)
+    def eval_log_density(self, params, hyper):
+        return eval_log_prior(params, hyper)
 
-    def sample(self, key, hyper):
-        return sample_prior(key, hyper)
+    def draw(self, key, hyper):
+        return draw_prior(key, hyper)
 
 
 class NormalRegressionLikelihood(mg.ExchangeableDGP):
-    def log_density_one(self, params, datum, hyper):
-        return log_lik_one(params, datum, hyper)
+    def eval_log_density_one(self, datum, params, hyper):
+        return eval_log_lik_one(datum, params, hyper)
 
-    def sample_one(self, key, params, datum, hyper):
-        return sample_one(key, params, datum, hyper)
+    def draw_one(self, key, datum, params, hyper):
+        return draw_one(key, datum, params, hyper)
 
 
 # ----------------------------------------------------------------------------
@@ -119,7 +119,7 @@ def simulate_data(key, n: int = 100, p: int = 3, sigma: float = 1.0):
     return X, y
 
 
-def exact_posterior(X, y, hyper):
+def compute_exact_posterior(X, y, hyper):
     """Posterior hyperparameters: beta | sigma2, y ~ N(mn, sigma2 Vn),
     sigma2 | y ~ InvGamma(an, bn)."""
     V0_inv = jnp.linalg.inv(hyper["V0"])
@@ -131,12 +131,12 @@ def exact_posterior(X, y, hyper):
     return {"m0": mn, "V0": Vn, "a0": an, "b0": bn}
 
 
-def exact_log_posterior(params, X, y, hyper):
-    return log_prior(params, exact_posterior(X, y, hyper))
+def eval_exact_log_posterior(params, X, y, hyper):
+    return eval_log_prior(params, compute_exact_posterior(X, y, hyper))
 
 
-def log_marginal_likelihood(X, y, hyper):
-    post = exact_posterior(X, y, hyper)
+def eval_log_marginal_likelihood(X, y, hyper):
+    post = compute_exact_posterior(X, y, hyper)
     n = X.shape[0]
     return (-0.5 * n * jnp.log(2 * jnp.pi)
             + 0.5 * jnp.linalg.slogdet(post["V0"])[1] - 0.5 * jnp.linalg.slogdet(hyper["V0"])[1]
@@ -144,9 +144,9 @@ def log_marginal_likelihood(X, y, hyper):
             + gammaln(post["a0"]) - gammaln(hyper["a0"]))
 
 
-def sample_exact_posterior(key, X, y, hyper, n_chains: int = 4, n_draws: int = 1000):
+def draw_exact_posterior(key, X, y, hyper, n_chains: int = 4, n_draws: int = 1000):
     """Exact posterior draws with leading (chain, draw) axes."""
-    post = exact_posterior(X, y, hyper)
+    post = compute_exact_posterior(X, y, hyper)
     keys = jax.random.split(key, n_chains * n_draws)
-    draws = jax.vmap(lambda k: sample_prior(k, post))(keys)
+    draws = jax.vmap(lambda k: draw_prior(k, post))(keys)
     return jax.tree_util.tree_map(lambda a: a.reshape((n_chains, n_draws) + a.shape[1:]), draws)

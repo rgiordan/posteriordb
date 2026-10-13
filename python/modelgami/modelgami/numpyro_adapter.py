@@ -72,47 +72,48 @@ def from_numpyro(model_fn: Callable, data, hyper=None, *, exchangeable: bool = F
         params_pattern = pg.PatternDict({k: pattern_for_support(tr[k]["fn"].support, shape=jnp.shape(tr[k]["value"]))
                                          for k in latent})
 
-    def site_sum(t, names, *, pointwise=False):
+    def sum_sites(t, names, *, singleobs=False):
         total = 0.0
         for k in names:
             lp = t[k]["fn"].log_prob(t[k]["value"])
-            total = total + (lp if pointwise else jnp.sum(lp))
+            total = total + (lp if singleobs else jnp.sum(lp))
         return total
 
     # The prior runs the program with the model's data (for plate sizes).
     prior = DGP(
-        log_density=lambda params, h: site_sum(trace(params=params, d=data, h=h), latent),
-        sample=lambda key, h: {k: v["value"] for k, v in trace(params=None, d=data, h=h, key=key).items()
-                               if k in latent},
+        eval_log_density=lambda params, h: sum_sites(trace(params=params, d=data, h=h), latent),
+        draw=lambda key, h: {k: v["value"] for k, v in trace(params=None, d=data, h=h, key=key).items()
+                             if k in latent},
     )
 
-    def sample_data(key, params, d, h):
+    def draw_data(key, d, params, h):
         t = trace(params=params, d=d, h=h, key=key, resample=observed)
         return {**d, **{k: t[k]["value"] for k in observed if k in d}}
 
+    name = name or getattr(model_fn, "__name__", None)
     if exchangeable:
         likelihood = _NumPyroLikelihood(
-            pointwise=lambda params, d, h: site_sum(trace(params=params, d=d, h=h), observed, pointwise=True),
-            sample=sample_data)
+            eval_singleobs=lambda d, params, h: sum_sites(trace(params=params, d=d, h=h), observed, singleobs=True),
+            draw=draw_data)
         return ExchangeableModel(params_pattern=params_pattern, prior=prior, likelihood=likelihood, data=data,
-                                 hyper=hyper, name=name or getattr(model_fn, "__name__", None))
-    likelihood = DGP(log_density=lambda params, d, h: site_sum(trace(params=params, d=d, h=h), observed),
-                     sample=sample_data)
+                                 hyper=hyper, name=name)
+    likelihood = DGP(eval_log_density=lambda d, params, h: sum_sites(trace(params=params, d=d, h=h), observed),
+                     draw=draw_data)
     return Model(params_pattern=params_pattern, prior=prior, likelihood=likelihood, data=data, hyper=hyper,
-                 name=name or getattr(model_fn, "__name__", None))
+                 name=name)
 
 
 class _NumPyroLikelihood(ExchangeableDGP):
-    """An exchangeable likelihood whose pointwise terms come from the
-    program's observed sites, all observations at once."""
+    """An exchangeable likelihood whose single-observation terms come from
+    the program's observed sites, all observations at once."""
 
-    def __init__(self, *, pointwise, sample):
+    def __init__(self, *, eval_singleobs, draw):
         super().__init__()
-        self._pointwise = pointwise
-        self.sample = sample
+        self._eval_singleobs = eval_singleobs
+        self.draw = draw
 
-    def log_density_pointwise(self, params, data, hyper):
-        return self._pointwise(params, data, hyper)
+    def eval_log_density_singleobs(self, data, params, hyper):
+        return self._eval_singleobs(data, params, hyper)
 
 
 class _Unobserve(Messenger):

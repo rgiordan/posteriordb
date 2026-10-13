@@ -1,117 +1,106 @@
 """`Model` and `ExchangeableModel`.
 
-A model is a paragami pattern for the parameters, a prior and a likelihood
-(both `DGP`s), the data and the hyperparameters:
+A model is a prior and a likelihood (both `DGP`s), a paragami pattern for
+the parameters, the data and the hyperparameters:
 
-    model = Model(params_pattern=pattern, prior=DGP(log_prior, sample_prior),
-                  likelihood=DGP(log_lik, sample_data), data=data, hyper=hyper)
+    model = Model(prior=DGP(eval_log_prior, draw_prior),
+                  likelihood=DGP(eval_log_lik, draw_data),
+                  data=data, hyper=hyper, params_pattern=pattern)
 
-From these it builds log densities of the parameters in folded, flat or free
-form (`log_density_fn`), ready for `jax.grad`, `jax.hessian`, `jax.vmap` and
-`jax.jit`. The data and hyperparameters are arguments of every function,
-with the model's own as defaults.
+What the model itself does is combine the two: the log joint density and
+draws from the joint and marginal distributions. Every method takes the data
+and hyperparameters as arguments, with the model's own as defaults.
 
-`ExchangeableModel` takes an `ExchangeableDGP` likelihood and adds what
-only makes sense for exchangeable data: the number of observations,
-pointwise and weighted log likelihoods, and bootstrap weights.
+For an unconstrained target (for HMC, VI, optimization), `eval_free_log_joint`
+uses the prior over the free parameters, `free_dgp(prior, params_pattern)`,
+which includes the log Jacobian; the likelihood is a function of the
+parameters, not a density over them, so it has none.
 
-Move parameters between representations with `model.params_pattern`
-directly (paragami).
+`ExchangeableModel` takes an `ExchangeableDGP` likelihood and adds what only
+makes sense for exchangeable data: the number of observations,
+single-observation and weighted log likelihoods, subsets, and bootstrap
+weights.
 """
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 import jax
-import jax.numpy as jnp
 import paragami as pg
 
-from .arviz_io import to_arviz
-from .dgp import DGP, ExchangeableDGP, n_obs
-
-_REPRESENTATIONS = ("folded", "flat", "free")
+from .dgp import DGP, ExchangeableDGP, count_obs, draw_np_bootstrap_weights, free_dgp
 
 
 class Model:
-    def __init__(self, *, params_pattern: pg.Pattern, likelihood: DGP, prior: Optional[DGP] = None,
-                 data: Any = None, hyper: Optional[Dict[str, Any]] = None, name: Optional[str] = None):
-        """`prior=None` is a flat (improper) prior: log density zero, no sampler."""
-        if not isinstance(params_pattern, pg.Pattern):
-            raise TypeError("params_pattern must be a paragami Pattern")
+    def __init__(self, *, likelihood: DGP, prior: Optional[DGP] = None, data: Any = None,
+                 hyper: Optional[Dict[str, Any]] = None, params_pattern: Optional[pg.Pattern] = None,
+                 name: Optional[str] = None):
+        """`prior=None` is a flat (improper) prior: log density zero, no
+        sampler. `params_pattern=None` infers an unconstrained pattern from
+        one prior draw."""
         if not isinstance(likelihood, DGP):
             raise TypeError("likelihood must be a DGP")
         if prior is not None and not isinstance(prior, DGP):
             raise TypeError("prior must be a DGP")
-        self.params_pattern = params_pattern
         self.likelihood = likelihood
-        self.prior = DGP(log_density=_flat_log_density) if prior is None else prior
+        self.prior = DGP(eval_log_density=_eval_flat_log_density) if prior is None else prior
         self.data = data
         self.hyper = {} if hyper is None else hyper
         self.name = name or type(self).__name__
+        if params_pattern is None:
+            try:
+                example = self.draw_prior(jax.random.PRNGKey(0))
+            except NotImplementedError:
+                raise ValueError("give params_pattern, or a prior that can draw (to infer the pattern from)")
+            params_pattern = pg.unconstrained_pattern_like(example, default_name="params")
+        self.params_pattern = params_pattern
 
-    # -- the prior and likelihood, with the model's data and hyper as defaults ----
+    def _data(self, data):
+        return self.data if data is None else data
 
-    def log_prior(self, params, hyper=None):
-        return self.prior.log_density(params, self.hyper if hyper is None else hyper)
+    def _hyper(self, hyper):
+        return self.hyper if hyper is None else hyper
 
-    def log_lik(self, params, data=None, hyper=None, **kwargs):
-        return self.likelihood.log_density(params, self.data if data is None else data,
-                                           self.hyper if hyper is None else hyper, **kwargs)
+    # -- log densities, with the model's data and hyper as defaults ----------------
 
-    def sample_prior(self, key, hyper=None):
-        return self.prior.sample(key, self.hyper if hyper is None else hyper)
+    def eval_log_prior(self, params, hyper=None):
+        return self.prior.eval_log_density(params, self._hyper(hyper))
 
-    def sample_data(self, key, params, data=None, hyper=None):
-        return self.likelihood.sample(key, params, self.data if data is None else data,
-                                      self.hyper if hyper is None else hyper)
+    def eval_log_lik(self, params, data=None, hyper=None, **kwargs):
+        return self.likelihood.eval_log_density(self._data(data), params, self._hyper(hyper), **kwargs)
 
-    # -- log densities of the parameters ------------------------------------------
+    def eval_log_joint(self, params, data=None, hyper=None, **kwargs):
+        """Log prior plus log likelihood; `kwargs` go to the likelihood."""
+        return self.eval_log_prior(params, hyper) + self.eval_log_lik(params, data, hyper, **kwargs)
 
-    def log_density_fn(self, which: str = "joint", *, params_as: str = "free",
-                       jacobian: Optional[bool] = None) -> Callable:
-        """Return `f(p, data=None, hyper=None, **kwargs) -> scalar`, where `p`
-        is the parameters in `params_as` form and `kwargs` go to the
-        likelihood (e.g. `weights` for an exchangeable model).
+    def eval_free_log_joint(self, free_params, data=None, hyper=None, **kwargs):
+        """The log joint density as a density over the free parameters: the
+        free prior (with its log Jacobian) plus the log likelihood."""
+        hyper = self._hyper(hyper)
+        free_prior = free_dgp(self.prior, self.params_pattern)
+        params = self.params_pattern.free_to_folded(free_params)
+        return free_prior.eval_log_density(free_params, hyper) + self.eval_log_lik(params, data, hyper, **kwargs)
 
-        which:     "joint" (log prior + log likelihood), "lik" or "prior".
-        params_as: "folded" (dict of arrays), "flat" (constrained vector)
-                   or "free" (unconstrained vector).
-        jacobian:  add the log Jacobian of the free -> folded map when
-                   params_as="free". By default each function is, up to a
-                   constant, the density it names with respect to the
-                   parameters you pass: True for "joint" and "prior", False
-                   for "lik".
-        """
-        if which not in ("joint", "lik", "prior"):
-            raise ValueError(f"which must be 'joint', 'lik' or 'prior', got {which!r}")
-        if params_as not in _REPRESENTATIONS:
-            raise ValueError(f"params_as must be one of {_REPRESENTATIONS}, got {params_as!r}")
-        if jacobian is None:
-            jacobian = which != "lik"
-        pattern = self.params_pattern
+    # -- draws ----------------------------------------------------------------------
 
-        def f(p, data=None, hyper=None, **kwargs):
-            if params_as == "free":
-                params = pattern.free_to_folded(p)
-            elif params_as == "flat":
-                params = pattern.flat_to_folded(p)
-            else:
-                params = p
-            lp = 0.0
-            if which in ("joint", "lik"):
-                lp = lp + self.log_lik(params, data, hyper, **kwargs)
-            if which in ("joint", "prior"):
-                lp = lp + self.log_prior(params, hyper)
-            if jacobian and params_as == "free":
-                lp = lp + pattern.free_to_folded_log_abs_det(p)
-            return lp
+    def draw_prior(self, key, hyper=None):
+        return self.prior.draw(key, self._hyper(hyper))
 
-        return f
+    def draw_data(self, key, params, data=None, hyper=None):
+        """New data given `params`, with the covariates and shapes of `data`."""
+        return self.likelihood.draw(key, self._data(data), params, self._hyper(hyper))
 
-    def to_arviz(self, draws, **kwargs):
-        """See `modelgami.arviz_io.to_arviz`."""
-        return to_arviz(self, draws, **kwargs)
+    def draw_joint(self, key, data=None, hyper=None):
+        """`(params, data)` from the joint distribution: params from the
+        prior, then data given them."""
+        prior_key, data_key = jax.random.split(key)
+        params = self.draw_prior(prior_key, hyper)
+        return params, self.draw_data(data_key, params, data, hyper)
+
+    def draw_marginal_data(self, key, data=None, hyper=None):
+        """Data from their marginal (prior predictive) distribution."""
+        return self.draw_joint(key, data, hyper)[1]
 
     def __repr__(self):
         return f"<{type(self).__name__} {self.name}: free dimension {self.params_pattern.free_length()}>"
@@ -122,39 +111,47 @@ class ExchangeableModel(Model):
     observations (every data leaf has a leading axis of length N),
     independent given the parameters and hyperparameters."""
 
-    def __init__(self, *, params_pattern: pg.Pattern, likelihood: ExchangeableDGP, prior: Optional[DGP] = None,
-                 data: Any = None, hyper: Optional[Dict[str, Any]] = None, name: Optional[str] = None):
+    def __init__(self, *, likelihood: ExchangeableDGP, prior: Optional[DGP] = None, data: Any = None,
+                 hyper: Optional[Dict[str, Any]] = None, params_pattern: Optional[pg.Pattern] = None,
+                 name: Optional[str] = None):
         if not isinstance(likelihood, ExchangeableDGP):
             raise TypeError("an ExchangeableModel needs an ExchangeableDGP likelihood")
-        super().__init__(params_pattern=params_pattern, likelihood=likelihood, prior=prior,
-                         data=data, hyper=hyper, name=name)
+        super().__init__(likelihood=likelihood, prior=prior, data=data, hyper=hyper,
+                         params_pattern=params_pattern, name=name)
 
     @property
     def n_obs(self) -> int:
-        return n_obs(self.data)
+        return count_obs(self.data)
 
-    def log_lik_pointwise(self, params, data=None, hyper=None):
-        return self.likelihood.log_density_pointwise(params, self.data if data is None else data,
-                                                     self.hyper if hyper is None else hyper)
+    def eval_log_lik_singleobs(self, params, data=None, hyper=None):
+        """The (N,) vector of single-observation log likelihoods."""
+        return self.likelihood.eval_log_density_singleobs(self._data(data), params, self._hyper(hyper))
 
-    def bootstrap_weights(self, key):
-        """Multinomial(N, 1/N) counts, for the nonparametric bootstrap as
-        `log_lik(params, weights=...)`."""
-        idx = jax.random.randint(key, (self.n_obs,), 0, self.n_obs)
-        return jnp.zeros(self.n_obs).at[idx].add(1.0)
+    def eval_log_joint(self, params, data=None, hyper=None, weights=None):
+        """Log prior plus the log likelihood, weighted by `weights` if given."""
+        return self.eval_log_prior(params, hyper) + self.eval_log_lik(params, data, hyper, weights=weights)
 
+    def eval_log_joint_subset(self, params, idx, data=None, hyper=None, scale: Optional[float] = None):
+        """Log prior plus the log likelihood of observations `idx`, scaled
+        by N / len(idx) by default (an unbiased minibatch estimate)."""
+        return self.eval_log_prior(params, hyper) + self.likelihood.eval_log_density_subset(
+            self._data(data), params, self._hyper(hyper), idx, scale=scale)
 
-def hvp(f, argnum: int = 0):
-    """Hessian-vector product of a scalar function: `hvp(f)(x, v, *rest)`,
-    forward-over-reverse (never forms the Hessian)."""
-    if argnum != 0:
-        raise NotImplementedError("hvp currently differentiates the first argument")
-
-    def hv(x, v, *rest):
-        return jax.jvp(lambda x_: jax.grad(f, argnums=0)(x_, *rest), (x,), (v,))[1]
-
-    return hv
+    def draw_np_bootstrap_weights(self, key):
+        """Nonparametric bootstrap weights for this model's observations."""
+        return draw_np_bootstrap_weights(key, self.n_obs)
 
 
-def _flat_log_density(params, hyper):
+def make_hvp(f):
+    """Hessian-vector product of a scalar function of its first argument:
+    `make_hvp(f)(x, v, *rest)`, forward-over-reverse (never forms the
+    Hessian)."""
+
+    def hvp(x, v, *rest):
+        return jax.jvp(lambda x_: jax.grad(f)(x_, *rest), (x,), (v,))[1]
+
+    return hvp
+
+
+def _eval_flat_log_density(params, hyper):
     return 0.0

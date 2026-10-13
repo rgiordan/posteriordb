@@ -2,15 +2,16 @@
 `modelgami[stan]`).
 
     model = from_bridgestan("eight_schools.stan", data)
-    f = model.log_density_fn("joint", params_as="free")   # Stan's log density
-    jax.grad(f), jax.hessian(f), mg.hvp(f)                # from Stan's own derivatives
+    f = model.eval_free_log_joint                          # Stan's log density
+    jax.grad(f), jax.hessian(f), mg.make_hvp(f)            # from Stan's own derivatives
 
 A Stan program accumulates a single `target`, and its data are fixed when
 the model is loaded. So, compared with a model written in JAX:
 
-- Only the joint density of the *free* parameters is available. `jacobian`
-  works, but prior and likelihood are not separated and there are no
-  pointwise terms.
+- Only the joint density of the *free* parameters is available
+  (`eval_free_log_joint`, with `jacobian=False` to leave out the log
+  Jacobian). Prior and likelihood are not separated and there are no
+  single-observation terms.
 - Derivatives come from Stan: gradients exactly; Hessians and
   Hessian-vector products from BridgeStan (finite differences of gradients
   unless BridgeStan was built with autodiff Hessians). There are no
@@ -58,24 +59,21 @@ def from_bridgestan(stan_file_or_lib, data: Optional[dict] = None, *, name: Opti
 
 
 class StanModel(Model):
-    """A `Model` whose log density is Stan's. Only the joint density of the
-    free parameters exists; `prior` and `likelihood` are empty DGPs."""
+    """A `Model` whose log density is Stan's. Only `eval_free_log_joint`
+    exists; `prior` and `likelihood` are empty DGPs, so the other methods
+    raise NotImplementedError."""
 
     def __init__(self, *, bs, data, name):
         super().__init__(params_pattern=StanParamsPattern(bs), likelihood=DGP(), prior=DGP(), data=data, name=name)
         self.bridgestan = bs
         self._log_density = _differentiable_density(bs)
 
-    def log_density_fn(self, which: str = "joint", *, params_as: str = "free",
-                       jacobian: Optional[bool] = None):
-        if (which, params_as) != ("joint", "free"):
-            raise NotImplementedError(f"{self.name} only provides the joint density of free parameters")
-        jacobian = True if jacobian is None else jacobian
-
-        def f(x):
-            return self._log_density(x) if jacobian else _plain(bs=self.bridgestan, x=x)
-
-        return f
+    def eval_free_log_joint(self, free_params, data=None, hyper=None, jacobian: bool = True):
+        """Stan's log density of the free parameters, with the log Jacobian
+        unless `jacobian=False`. The data and hyperparameters are fixed."""
+        if data is not None or hyper is not None:
+            raise NotImplementedError(f"{self.name} has fixed data; call from_bridgestan with new data")
+        return self._log_density(free_params) if jacobian else _plain(bs=self.bridgestan, x=free_params)
 
 
 def _plain(*, bs, x):
@@ -135,7 +133,7 @@ def _cb(fn, shape, *args):
 class StanParamsPattern(pg.Pattern):
     """Stan's own constrain/unconstrain, as a paragami pattern over a dict
     keyed by Stan parameter names. Folding is not differentiable (it calls
-    Stan); log densities should be taken through `log_density_fn`."""
+    Stan); log densities should be taken through `StanModel.eval_free_log_joint`."""
 
     def __init__(self, bs):
         self._bs = bs
@@ -161,7 +159,7 @@ class StanParamsPattern(pg.Pattern):
         return self._flat_to_folded(flat)
 
     def _free_to_folded_log_det(self, free):
-        # Stan does not expose the log det alone; it is part of log_density_fn.
+        # Stan does not expose the log det alone; it is part of eval_free_log_joint.
         return jnp.full((), jnp.nan)
 
     def _folded_to_free(self, folded):

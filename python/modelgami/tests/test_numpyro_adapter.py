@@ -36,20 +36,20 @@ def test_same_model(models):
     assert set(npm.params_pattern.keys()) == {"beta", "sigma2"}
     for k in jax.random.split(jax.random.PRNGKey(1), 5):
         p = hand.params_pattern.random(k)
-        np.testing.assert_allclose(npm.log_prior(p), hand.log_prior(p), rtol=1e-10)
-        np.testing.assert_allclose(npm.log_lik_pointwise(p), hand.log_lik_pointwise(p), rtol=1e-10)
+        np.testing.assert_allclose(npm.eval_log_prior(p), hand.eval_log_prior(p), rtol=1e-10)
+        np.testing.assert_allclose(npm.eval_log_lik_singleobs(p), hand.eval_log_lik_singleobs(p), rtol=1e-10)
         x = npm.params_pattern.folded_to_free(p)
-        np.testing.assert_allclose(npm.log_density_fn()(x), hand.log_density_fn()(hand.params_pattern.folded_to_free(p)),
-                                   rtol=1e-10)
+        np.testing.assert_allclose(npm.eval_free_log_joint(x),
+                                   hand.eval_free_log_joint(hand.params_pattern.folded_to_free(p)), rtol=1e-10)
 
 
 def test_contract_and_simulation(models):
     hand, npm = models
     check_model_contract(npm)
     assert isinstance(npm, mg.ExchangeableModel)
-    p = npm.sample_prior(jax.random.PRNGKey(2))
+    p = npm.draw_prior(jax.random.PRNGKey(2))
     assert npm.params_pattern.validate_folded(p)[0]
-    d = npm.sample_data(jax.random.PRNGKey(3), p)
+    d = npm.draw_data(jax.random.PRNGKey(3), p)
     np.testing.assert_array_equal(d["x"], hand.data["x"])
     assert d["y"].shape == hand.data["y"].shape and not np.allclose(d["y"], hand.data["y"])
 
@@ -57,9 +57,9 @@ def test_contract_and_simulation(models):
 def test_hyper_and_data_derivatives(models):
     _, npm = models
     x = jnp.zeros(npm.params_pattern.free_length())
-    gh = jax.grad(lambda h: npm.log_density_fn()(x, hyper=h))(npm.hyper)
+    gh = jax.grad(lambda h: npm.eval_free_log_joint(x, hyper=h))(npm.hyper)
     assert np.all(np.isfinite(gh["V0"]))
-    gd = jax.grad(lambda d: npm.log_density_fn()(x, data=d))(npm.data)
+    gd = jax.grad(lambda d: npm.eval_free_log_joint(x, data=d))(npm.data)
     assert np.all(np.isfinite(gd["x"])) and np.all(np.isfinite(gd["y"]))
 
 
