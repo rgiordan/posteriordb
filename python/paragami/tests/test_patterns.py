@@ -80,24 +80,24 @@ _NOT_JACOBIANS = {"unit_vector", "sum_to_zero", "sum_to_zero_matrix", "corr_tfp"
 @pytest.mark.parametrize("name", list(_patterns()))
 def test_round_trips(name):
     pattern = _patterns()[name]
-    u = jax.random.normal(jax.random.PRNGKey(0), (pattern.free_length(),))
+    u = jax.random.normal(jax.random.PRNGKey(0), (pattern.get_free_length(),))
     folded = pattern.free_to_folded(u)
     ok, msg = pattern.validate_folded(folded)
     assert ok, msg
     expected = u / jnp.linalg.norm(u) if name == "unit_vector" else u  # Stan's unit_vector_free returns x
     np.testing.assert_allclose(pattern.folded_to_free(folded), expected, atol=1e-10)
     flat = pattern.folded_to_flat(folded)
-    assert flat.shape == (pattern.flat_length(),)
+    assert flat.shape == (pattern.get_flat_length(),)
     refolded = pattern.flat_to_folded(flat)
     jax.tree_util.tree_map(lambda a, b: np.testing.assert_allclose(a, b, atol=1e-12), folded, refolded)
-    assert len(pattern.free_names()) == pattern.free_length() or pattern.free_length() == 1
-    assert len(pattern.flat_names()) == pattern.flat_length() or pattern.flat_length() == 1
+    assert len(pattern.get_free_names()) == pattern.get_free_length() or pattern.get_free_length() == 1
+    assert len(pattern.get_flat_names()) == pattern.get_flat_length() or pattern.get_flat_length() == 1
 
 
 @pytest.mark.parametrize("name", [n for n in _patterns() if n not in _NOT_JACOBIANS])
 def test_log_det_matches_autodiff(name):
     pattern = _patterns()[name]
-    u = 0.5 * jax.random.normal(jax.random.PRNGKey(1), (pattern.free_length(),))
+    u = 0.5 * jax.random.normal(jax.random.PRNGKey(1), (pattern.get_free_length(),))
     chart, constant = _CHARTS.get(name, (lambda p, f: f, 0.0))
 
     def to_chart(u_):
@@ -112,7 +112,7 @@ def test_log_det_matches_autodiff(name):
 @pytest.mark.parametrize("name", list(_patterns()))
 def test_direct_conversions_match_fold_and_flatten(name):
     pattern = _patterns()[name]
-    u = jax.random.normal(jax.random.PRNGKey(4), (pattern.free_length(),))
+    u = jax.random.normal(jax.random.PRNGKey(4), (pattern.get_free_length(),))
     folded = pattern.free_to_folded(u)
     same = lambda a, b: jax.tree_util.tree_map(lambda x, y: np.testing.assert_allclose(x, y, atol=1e-12), a, b)
     same(folded, pattern.fold(u, from_free=True))
@@ -126,20 +126,20 @@ def test_direct_conversions_match_fold_and_flatten(name):
 
 
 @pytest.mark.parametrize("name", list(_patterns()))
-def test_code_to_generate_round_trip(name):
+def test_generate_code_round_trip(name):
     pattern = _patterns()[name]
-    assert eval(pattern.code_to_generate(), {"pg": pg}) == pattern
-    assert eval(pattern.code_to_generate(module=""), vars(pg)) == pattern
+    assert eval(pattern.generate_code(), {"pg": pg}) == pattern
+    assert eval(pattern.generate_code(module=""), vars(pg)) == pattern
 
 
 def test_transforms_are_jittable_and_vmappable():
     pattern = _patterns()["dict"]
-    us = jax.random.normal(jax.random.PRNGKey(2), (5, pattern.free_length()))
+    us = jax.random.normal(jax.random.PRNGKey(2), (5, pattern.get_free_length()))
     folded, log_det = jax.jit(jax.vmap(pattern.free_to_folded_with_log_det))(us)
     assert folded["b"].shape == (5, 3)
     assert log_det.shape == (5,)
     g = jax.grad(pattern.free_to_folded_log_abs_det)(us[0])
-    assert g.shape == (pattern.free_length(),)
+    assert g.shape == (pattern.get_free_length(),)
 
 
 def test_validation_errors():
@@ -205,7 +205,7 @@ def test_column_major_order():
     p = pg.NumericArrayPattern((2, 3), order="F")
     x = jnp.arange(6.0).reshape(2, 3)
     np.testing.assert_array_equal(p.folded_to_flat(x), [0, 3, 1, 4, 2, 5])
-    assert p.flat_names()[:2] == ["[0,0]", "[1,0]"]
+    assert p.get_flat_names()[:2] == ["[0,0]", "[1,0]"]
 
 
 def test_function_wrappers():
@@ -242,15 +242,15 @@ def test_empty_random_and_equality():
     p = _patterns()["dict"]
     assert p == _patterns()["dict"]
     assert p != pg.PatternDict(a=pg.NumericScalarPattern())
-    r = p.random(jax.random.PRNGKey(0))
+    r = p.draw_random(jax.random.PRNGKey(0))
     assert p.validate_folded(r)[0]
-    assert np.all(np.isnan(p.empty(valid=False)["a"]))
+    assert np.all(np.isnan(p.make_empty(valid=False)["a"]))
 
 
 def test_nested_dict_names():
     p = pg.PatternDict(a=pg.PatternDict(b=pg.NumericVectorPattern(2), c=pg.NumericScalarPattern()),
                        d=pg.NumericScalarPattern())
-    assert p.flat_names() == ["a.b[0]", "a.b[1]", "a.c", "d"]
+    assert p.get_flat_names() == ["a.b[0]", "a.b[1]", "a.c", "d"]
 
 
 def test_unconstrained_pattern_like():
@@ -260,31 +260,31 @@ def test_unconstrained_pattern_like():
         "nested": {"cov": np.eye(2), "count": 3},
         "w": [jnp.zeros(2), 1.0],
     }
-    p = pg.unconstrained_pattern_like(value)
+    p = pg.make_unconstrained_pattern_like(value)
     assert list(p.keys()) == ["beta", "sigma", "nested", "w"]
     assert list(p["w"].keys()) == ["w_0", "w_1"]
-    assert p.free_length() == p.flat_length() == 3 + 1 + 4 + 1 + 2 + 1
+    assert p.get_free_length() == p.get_flat_length() == 3 + 1 + 4 + 1 + 2 + 1
     x = p.folded_to_free({**value, "w": {"w_0": value["w"][0], "w_1": value["w"][1]}})
     folded = p.free_to_folded(x)
     np.testing.assert_allclose(folded["nested"]["cov"], np.eye(2))
     assert folded["sigma"].shape == () and folded["w"]["w_0"].shape == (2,)
-    assert "nested.cov[1,1]" in p.flat_names()
+    assert "nested.cov[1,1]" in p.get_flat_names()
 
     # Names for unnamed containers come from default_name; a bare leaf is a single pattern.
-    assert list(pg.unconstrained_pattern_like((1.0, jnp.ones(3)), default_name="theta").keys()) == ["theta_0", "theta_1"]
-    leaf = pg.unconstrained_pattern_like(jnp.ones((2, 3)))
-    assert type(leaf) is pg.NumericArrayPattern and leaf.free_length() == 6
-    assert type(pg.unconstrained_pattern_like(1.0)) is pg.NumericScalarPattern
+    assert list(pg.make_unconstrained_pattern_like((1.0, jnp.ones(3)), default_name="theta").keys()) == ["theta_0", "theta_1"]
+    leaf = pg.make_unconstrained_pattern_like(jnp.ones((2, 3)))
+    assert type(leaf) is pg.NumericArrayPattern and leaf.get_free_length() == 6
+    assert type(pg.make_unconstrained_pattern_like(1.0)) is pg.NumericScalarPattern
     with pytest.raises(TypeError):
-        pg.unconstrained_pattern_like({"a": "text"})
+        pg.make_unconstrained_pattern_like({"a": "text"})
 
 
 def test_unconstrained_pattern_code():
     value = {"beta": jnp.zeros(3), "s": 1.0, "not an identifier": jnp.zeros((2, 2))}
-    code = pg.unconstrained_pattern_like(value).code_to_generate()
+    code = pg.make_unconstrained_pattern_like(value).generate_code()
     assert "beta=" not in code and "'not an identifier':" in code
-    assert eval(code, {"pg": pg}) == pg.unconstrained_pattern_like(value)
-    code = pg.unconstrained_pattern_like({"beta": jnp.zeros(3), "inner": {"s": 1.0}}).code_to_generate()
+    assert eval(code, {"pg": pg}) == pg.make_unconstrained_pattern_like(value)
+    code = pg.make_unconstrained_pattern_like({"beta": jnp.zeros(3), "inner": {"s": 1.0}}).generate_code()
     assert code == (
         "pg.PatternDict(\n"
         "    beta=pg.NumericVectorPattern(3),\n"
@@ -299,7 +299,7 @@ def test_arviz_round_trip():
     pytest.importorskip("arviz")
     p = pg.PatternDict(beta=pg.NumericVectorPattern(2), sigma=pg.NumericScalarPattern(lb=0.0),
                        inner=pg.PatternDict(w=pg.SimplexArrayPattern(3), cov=pg.PSDSymmetricMatrixPattern(2)))
-    free = jax.random.normal(jax.random.PRNGKey(0), (2, 5, p.free_length()))
+    free = jax.random.normal(jax.random.PRNGKey(0), (2, 5, p.get_free_length()))
     idata = pg.free_draws_to_arviz(pattern=p, draws=free, coords={"coef": ["a", "b"]}, dims={"beta": ["coef"]},
                                    extra_groups={"observed_data": {"y": np.zeros(4)}})
     post = idata["posterior"] if not hasattr(idata, "posterior") else idata.posterior
@@ -309,7 +309,7 @@ def test_arviz_round_trip():
     folded = pg.arviz_to_folded_draws(pattern=p, data=idata)
     np.testing.assert_allclose(folded["inner"]["w"].sum(-1), 1.0)
     flat = pg.folded_draws_to_flat(pattern=p, draws=folded)
-    assert flat.shape == (2, 5, p.flat_length())
+    assert flat.shape == (2, 5, p.get_flat_length())
     again = pg.folded_draws_to_arviz(pattern=p, draws=pg.flat_draws_to_folded(pattern=p, draws=flat), group="prior")
     np.testing.assert_allclose(pg.arviz_to_free_draws(pattern=p, data=again, group="prior"), free, atol=1e-10)
     # A single (non-dict) pattern is one variable named `name`.

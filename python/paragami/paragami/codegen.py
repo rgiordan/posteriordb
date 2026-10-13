@@ -1,9 +1,9 @@
 """Write patterns for data structures you already have.
 
-`unconstrained_pattern_like(value)` builds an unconstrained pattern that
+`make_unconstrained_pattern_like(value)` builds an unconstrained pattern that
 matches a nested structure of dicts, lists and tuples with arrays or
-numbers at the leaves. Every pattern's `code_to_generate()` prints Python
-code that rebuilds it, so `unconstrained_pattern_like(value).code_to_generate()`
+numbers at the leaves. Every pattern's `generate_code()` prints Python
+code that rebuilds it, so `make_unconstrained_pattern_like(value).generate_code()`
 gives code to paste and then edit (for example to add constraints).
 """
 
@@ -18,7 +18,7 @@ from .containers import PatternDict
 from .numeric import NumericArrayPattern, NumericScalarPattern, NumericVectorPattern
 
 
-def unconstrained_pattern_like(value, *, default_name: str = "x") -> Pattern:
+def make_unconstrained_pattern_like(value, *, default_name: str = "x") -> Pattern:
     """An unconstrained pattern whose folded values look like `value`.
 
     `value` is a pytree of dicts, lists and tuples with arrays or numbers at
@@ -36,13 +36,13 @@ def unconstrained_pattern_like(value, *, default_name: str = "x") -> Pattern:
     if isinstance(value, dict):
         out = PatternDict()
         for k, v in value.items():
-            out[str(k)] = unconstrained_pattern_like(v, default_name=str(k))
+            out[str(k)] = make_unconstrained_pattern_like(v, default_name=str(k))
         return out
     if isinstance(value, (list, tuple)):
         out = PatternDict()
         for i, v in enumerate(value):
             name = f"{default_name}_{i}"
-            out[name] = unconstrained_pattern_like(v, default_name=name)
+            out[name] = make_unconstrained_pattern_like(v, default_name=name)
         return out
     if isinstance(value, numbers.Number) or hasattr(value, "shape"):
         if np.issubdtype(np.asarray(value).dtype, np.complexfloating):

@@ -97,13 +97,13 @@ def stan_model(tmp_path_factory):
 @pytest.mark.parametrize("seed", [0, 1, 2])
 def test_stan_transforms(stan_model, seed):
     pattern = stan_pattern()
-    assert pattern.free_length() == stan_model.param_unc_num()
-    u = np.random.default_rng(seed).normal(size=pattern.free_length()) * 0.7
+    assert pattern.get_free_length() == stan_model.param_unc_num()
+    u = np.random.default_rng(seed).normal(size=pattern.get_free_length()) * 0.7
     theta = stan_model.param_constrain(u)
     folded = pattern.free_to_folded(u)
     offset = 0
     for name, p in pattern.items():
-        n = p.flat_length()
+        n = p.get_flat_length()
         np.testing.assert_allclose(stan_layout(folded[name]), theta[offset:offset + n], atol=1e-12,
                                    err_msg=f"value of {name}")
         offset += n
@@ -140,7 +140,7 @@ def _tfp_cases(tfb):
 @pytest.mark.parametrize("case", ["lb", "ub", "lub", "ordered", "chol_cov", "cov", "chol_corr", "corr"])
 def test_tfp_transforms(tfb, case):
     pattern, bijector = _tfp_cases(tfb)[case]
-    u = jnp.asarray(np.random.default_rng(0).normal(size=pattern.free_length()) * 0.7)
+    u = jnp.asarray(np.random.default_rng(0).normal(size=pattern.get_free_length()) * 0.7)
     np.testing.assert_allclose(pattern.free_to_folded(u), bijector.forward(u), atol=1e-12)
     np.testing.assert_allclose(pattern.free_to_folded_log_abs_det(u),
                                bijector.forward_log_det_jacobian(u, event_ndims=1), atol=1e-12)

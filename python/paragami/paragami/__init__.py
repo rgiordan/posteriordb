@@ -21,7 +21,7 @@ from .arviz_io import (
     variables_to_folded_draws,
 )
 from .base import BIJECTORS, Pattern, ValidationError, is_concrete
-from .codegen import unconstrained_pattern_like
+from .codegen import make_unconstrained_pattern_like
 from .containers import PatternArray, PatternDict
 from .functions import (
     function_input_flat_to_folded,

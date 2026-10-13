@@ -40,7 +40,7 @@ from .base import Pattern, check_bijector, check_shape, format_call
 TFP_DIAG_SHIFT = 1e-5
 
 
-def tfp_fill_triangular_indices(n: int) -> np.ndarray:
+def make_tfp_fill_triangular_indices(n: int) -> np.ndarray:
     """An (n, n) integer matrix P such that TFP's `fill_triangular(x)` has
     x[P[i, j]] at each lower-triangular (i, j); -1 above the diagonal."""
     if n == 0:
@@ -64,10 +64,10 @@ class _SquareMatrixPattern(Pattern):
         self.bijector = check_bijector(bijector)
         super().__init__(flat_length=self.size * self.size, free_length=free_length)
 
-    def as_dict(self):
+    def to_dict(self):
         return {"size": self.size, "bijector": self.bijector}
 
-    def code_to_generate(self, *, module: str = "pg", indent: int = 4) -> str:
+    def generate_code(self, *, module: str = "pg", indent: int = 4) -> str:
         kwargs = {"bijector": repr(self.bijector)} if self.bijector != "stan" else {}
         return format_call(module=module, name=type(self).__name__, args=[str(self.size)], kwargs=kwargs)
 
@@ -99,7 +99,7 @@ class CholeskyCovPattern(_SquareMatrixPattern):
         super().__init__(size, free_length=size * (size + 1) // 2, bijector=bijector)
         rows, cols = np.tril_indices(self.size)
         if self.bijector == "tfp":
-            index = tfp_fill_triangular_indices(self.size)
+            index = make_tfp_fill_triangular_indices(self.size)
             order = np.argsort(index[rows, cols])  # free entry k sits at (rows[order[k]], cols[order[k]])
             rows, cols = rows[order], cols[order]
         self._rows, self._cols = rows, cols
@@ -174,7 +174,7 @@ class _CorrelationTransform:
         self.size, self.bijector = size, bijector
         rows, cols = np.tril_indices(size, k=-1)
         if bijector == "tfp":
-            index = tfp_fill_triangular_indices(size - 1)  # filled into L[1:, :-1]
+            index = make_tfp_fill_triangular_indices(size - 1)  # filled into L[1:, :-1]
             sub_rows, sub_cols = np.tril_indices(size - 1)
             order = np.argsort(index[sub_rows, sub_cols])
             rows, cols = sub_rows[order] + 1, sub_cols[order]
@@ -186,7 +186,7 @@ class _CorrelationTransform:
     def _strictly_lower(self, values):
         return jnp.zeros((self.size, self.size), dtype=values.dtype).at[self.rows, self.cols].set(values)
 
-    def stan_partial_correlations(self, u):
+    def compute_stan_partial_correlations(self, u):
         """(K, K) matrix of tanh(u) below the diagonal, and the remaining
         variance before each column: prod_{m<j} (1 - z[i, m]^2)."""
         z = self._strictly_lower(jnp.tanh(u))
@@ -195,14 +195,14 @@ class _CorrelationTransform:
                                                 axis=1), axis=1)
         return z, remaining
 
-    def forward(self, u):
+    def constrain(self, u):
         if self.bijector == "tfp":
             m = self._strictly_lower(u) + jnp.eye(self.size, dtype=u.dtype)
             return m / jnp.linalg.norm(m, axis=1, keepdims=True)
-        z, remaining = self.stan_partial_correlations(u)
+        z, remaining = self.compute_stan_partial_correlations(u)
         return z * jnp.sqrt(remaining) + jnp.diag(jnp.sqrt(jnp.diag(remaining)))
 
-    def inverse(self, chol):
+    def unconstrain(self, chol):
         chol = jnp.asarray(chol)
         if self.bijector == "tfp":
             return (chol / jnp.diag(chol)[:, None])[self.rows, self.cols]
@@ -211,7 +211,7 @@ class _CorrelationTransform:
         z = chol / jnp.sqrt(1.0 - before)
         return jnp.arctanh(z[self.rows, self.cols])
 
-    def tfp_log_det(self, chol):
+    def compute_tfp_log_det(self, chol):
         """TFP's `CorrelationCholesky` log det: sum_i (i + 2) log L_ii (0-indexed)."""
         weights = jnp.arange(2, self.size + 2, dtype=chol.dtype)
         return jnp.sum(weights * jnp.log(jnp.diag(chol)))
@@ -226,17 +226,17 @@ class CholeskyCorrPattern(_SquareMatrixPattern):
         self._transform = _CorrelationTransform(size=self.size, bijector=self.bijector, stan_order="row")
 
     def _free_to_folded(self, u):
-        return self._transform.forward(u)
+        return self._transform.constrain(u)
 
     def _free_to_folded_log_det(self, u):
         if self.bijector == "tfp":
-            return self._transform.tfp_log_det(self._transform.forward(u))
-        _, remaining = self._transform.stan_partial_correlations(u)
+            return self._transform.compute_tfp_log_det(self._transform.constrain(u))
+        _, remaining = self._transform.compute_stan_partial_correlations(u)
         below = remaining[self._transform.rows, self._transform.cols]
         return -2.0 * jnp.sum(jnp.log(jnp.cosh(u))) + 0.5 * jnp.sum(jnp.log(below))
 
     def _folded_to_free(self, mat):
-        return self._transform.inverse(mat)
+        return self._transform.unconstrain(mat)
 
     def _validate(self, x, validate_value):
         msg = check_shape(x, self.shape)
@@ -261,19 +261,19 @@ class CorrMatrixPattern(_SquareMatrixPattern):
         self._stan_weights = np.maximum(self.size - self._transform.cols - 2, 0).astype(float)
 
     def _free_to_folded(self, u):
-        chol = self._transform.forward(u)
+        chol = self._transform.constrain(u)
         return chol @ chol.T
 
     def _free_to_folded_log_det(self, u):
         if self.bijector == "tfp":
-            chol = self._transform.forward(u)
-            return self._transform.tfp_log_det(chol) + _log_det_outer_product(chol)
+            chol = self._transform.constrain(u)
+            return self._transform.compute_tfp_log_det(chol) + _log_det_outer_product(chol)
         z = jnp.tanh(u)
         return (-2.0 * jnp.sum(jnp.log(jnp.cosh(u)))
                 + 0.5 * jnp.sum(jnp.asarray(self._stan_weights) * jnp.log1p(-(z**2))))
 
     def _folded_to_free(self, mat):
-        return self._transform.inverse(jnp.linalg.cholesky(jnp.asarray(mat)))
+        return self._transform.unconstrain(jnp.linalg.cholesky(jnp.asarray(mat)))
 
     def _validate(self, x, validate_value):
         msg = check_shape(x, self.shape)

@@ -69,7 +69,7 @@ class NumericArrayPattern(Pattern):
         n = _size(self.shape)
         super().__init__(flat_length=n, free_length=n)
 
-    def as_dict(self):
+    def to_dict(self):
         return {"shape": self.shape, "lb": self.lb, "ub": self.ub, "offset": self.offset.tolist(),
                 "multiplier": self.multiplier.tolist(), "order": self.order, "bijector": self.bijector}
 
@@ -103,7 +103,7 @@ class NumericArrayPattern(Pattern):
             kwargs["bijector"] = repr(self.bijector)
         return kwargs
 
-    def code_to_generate(self, *, module: str = "pg", indent: int = 4) -> str:
+    def generate_code(self, *, module: str = "pg", indent: int = 4) -> str:
         return format_call(module=module, name="NumericArrayPattern", args=[repr(self.shape)],
                            kwargs=self._code_kwargs())
 
@@ -193,7 +193,7 @@ class NumericVectorPattern(NumericArrayPattern):
                  offset=0.0, multiplier=1.0, bijector: str = "stan"):
         super().__init__((length,), lb=lb, ub=ub, offset=offset, multiplier=multiplier, bijector=bijector)
 
-    def code_to_generate(self, *, module: str = "pg", indent: int = 4) -> str:
+    def generate_code(self, *, module: str = "pg", indent: int = 4) -> str:
         return format_call(module=module, name="NumericVectorPattern", args=[str(self.shape[0])],
                            kwargs=self._code_kwargs())
 
@@ -203,7 +203,7 @@ class NumericScalarPattern(NumericArrayPattern):
                  bijector: str = "stan"):
         super().__init__((), lb=lb, ub=ub, offset=offset, multiplier=multiplier, bijector=bijector)
 
-    def code_to_generate(self, *, module: str = "pg", indent: int = 4) -> str:
+    def generate_code(self, *, module: str = "pg", indent: int = 4) -> str:
         return format_call(module=module, name="NumericScalarPattern", kwargs=self._code_kwargs())
 
 
@@ -217,10 +217,10 @@ class OrderedVectorPattern(Pattern):
         self.positive = bool(positive)
         super().__init__(flat_length=self.length, free_length=self.length)
 
-    def as_dict(self):
+    def to_dict(self):
         return {"length": self.length, "positive": self.positive}
 
-    def code_to_generate(self, *, module: str = "pg", indent: int = 4) -> str:
+    def generate_code(self, *, module: str = "pg", indent: int = 4) -> str:
         return format_call(module=module, name="OrderedVectorPattern", args=[str(self.length)],
                            kwargs={"positive": "True"} if self.positive else {})
 
@@ -269,10 +269,10 @@ class UnitVectorPattern(Pattern):
             raise ValueError("a unit vector needs length >= 2")
         super().__init__(flat_length=self.length, free_length=self.length)
 
-    def as_dict(self):
+    def to_dict(self):
         return {"length": self.length}
 
-    def code_to_generate(self, *, module: str = "pg", indent: int = 4) -> str:
+    def generate_code(self, *, module: str = "pg", indent: int = 4) -> str:
         return format_call(module=module, name="UnitVectorPattern", args=[str(self.length)])
 
     def _flat_to_folded(self, flat_val):

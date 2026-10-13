@@ -74,18 +74,18 @@ class PatternDict(Pattern):
             p._set_validate(validate=validate)
 
     def _update(self):
-        self._flat_length = sum(p.flat_length() for p in self._patterns.values())
-        self._free_length = sum(p.free_length() for p in self._patterns.values())
+        self._flat_length = sum(p.get_flat_length() for p in self._patterns.values())
+        self._free_length = sum(p.get_free_length() for p in self._patterns.values())
 
-    def as_dict(self):
-        return {"patterns": {k: (type(p).__name__, p.as_dict()) for k, p in self._patterns.items()}}
+    def to_dict(self):
+        return {"patterns": {k: (type(p).__name__, p.to_dict()) for k, p in self._patterns.items()}}
 
-    def code_to_generate(self, *, module: str = "pg", indent: int = 4) -> str:
+    def generate_code(self, *, module: str = "pg", indent: int = 4) -> str:
         prefix = f"{module}." if module else ""
         if not self._patterns:
             return f"{prefix}PatternDict()"
         pad = " " * indent
-        codes = {k: p.code_to_generate(module=module, indent=indent) for k, p in self._patterns.items()}
+        codes = {k: p.generate_code(module=module, indent=indent) for k, p in self._patterns.items()}
         if all(isinstance(k, str) and k.isidentifier() and k != "patterns" for k in codes):
             body = "".join(f"{pad}{k}={indent_lines(code, spaces=indent)},\n" for k, code in codes.items())
             return f"{prefix}PatternDict(\n{body})"
@@ -147,17 +147,17 @@ class PatternArray(Pattern):
         self.array_shape = tuple(int(s) for s in array_shape)
         self.base_pattern = base_pattern
         self._m = int(math.prod(self.array_shape)) if self.array_shape else 1
-        base_shape = np.shape(base_pattern.empty(valid=True))
+        base_shape = np.shape(base_pattern.make_empty(valid=True))
         self.shape = self.array_shape + tuple(base_shape)
         self._base_shape = tuple(base_shape)
-        super().__init__(flat_length=self._m * base_pattern.flat_length(),
-                         free_length=self._m * base_pattern.free_length())
+        super().__init__(flat_length=self._m * base_pattern.get_flat_length(),
+                         free_length=self._m * base_pattern.get_free_length())
 
-    def as_dict(self):
-        return {"array_shape": self.array_shape, "base": (type(self.base_pattern).__name__, self.base_pattern.as_dict())}
+    def to_dict(self):
+        return {"array_shape": self.array_shape, "base": (type(self.base_pattern).__name__, self.base_pattern.to_dict())}
 
-    def code_to_generate(self, *, module: str = "pg", indent: int = 4) -> str:
-        base = self.base_pattern.code_to_generate(module=module, indent=indent)
+    def generate_code(self, *, module: str = "pg", indent: int = 4) -> str:
+        base = self.base_pattern.generate_code(module=module, indent=indent)
         return format_call(module=module, name="PatternArray", args=[repr(self.array_shape), base])
 
     def _set_validate(self, validate):

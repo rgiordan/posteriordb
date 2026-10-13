@@ -26,7 +26,7 @@ import numpy as np
 from .base import Pattern, check_bijector, check_shape, format_call
 
 
-def sum_to_zero_matrix(n: int) -> np.ndarray:
+def make_sum_to_zero_matrix(n: int) -> np.ndarray:
     """The (n+1, n) matrix A with orthonormal columns for which z = A @ y is
     Stan's sum-to-zero transform of y."""
     if n == 0:
@@ -41,7 +41,7 @@ def sum_to_zero_matrix(n: int) -> np.ndarray:
     return a
 
 
-def sum_to_zero_matrix_basis(n: int) -> np.ndarray:
+def make_sum_to_zero_matrix_basis(n: int) -> np.ndarray:
     """The (n, n-1) orthonormal basis Stan's `sum_to_zero_matrix` uses along
     each axis (different from the vector transform's basis). Column k has
     -1 in rows 0..k-1, k+1 in row k and -1 in the last row, scaled by
@@ -61,17 +61,17 @@ class _SimplexTransform:
     def __init__(self, *, size: int, bijector: str):
         self.size = size
         self.bijector = bijector
-        self._a = jnp.asarray(sum_to_zero_matrix(size - 1))
+        self._a = jnp.asarray(make_sum_to_zero_matrix(size - 1))
 
-    def forward(self, y):
+    def constrain(self, y):
         if self.bijector == "tfp":
             return jax.nn.softmax(jnp.concatenate([y, jnp.zeros((1,), dtype=y.dtype)]))
         return jax.nn.softmax(self._a @ y)
 
-    def log_det(self, y):
-        return jnp.sum(jnp.log(self.forward(y))) + 0.5 * math.log(self.size)
+    def compute_log_det(self, y):
+        return jnp.sum(jnp.log(self.constrain(y))) + 0.5 * math.log(self.size)
 
-    def inverse(self, x):
+    def unconstrain(self, x):
         logx = jnp.log(x)
         if self.bijector == "tfp":
             return logx[:-1] - logx[-1]
@@ -94,10 +94,10 @@ class SimplexArrayPattern(Pattern):
         self._simplex = _SimplexTransform(size=self.simplex_size, bijector=self.bijector)
         super().__init__(flat_length=self._m * self.simplex_size, free_length=self._m * (self.simplex_size - 1))
 
-    def as_dict(self):
+    def to_dict(self):
         return {"simplex_size": self.simplex_size, "array_shape": self.array_shape, "bijector": self.bijector}
 
-    def code_to_generate(self, *, module: str = "pg", indent: int = 4) -> str:
+    def generate_code(self, *, module: str = "pg", indent: int = 4) -> str:
         kwargs = {}
         if self.array_shape:
             kwargs["array_shape"] = repr(self.array_shape)
@@ -113,17 +113,17 @@ class SimplexArrayPattern(Pattern):
 
     def _free_to_folded(self, free_val):
         y = jnp.reshape(free_val, (self._m, self.simplex_size - 1))
-        return jnp.reshape(jax.vmap(self._simplex.forward)(y), self.shape)
+        return jnp.reshape(jax.vmap(self._simplex.constrain)(y), self.shape)
 
     def _free_to_folded_log_det(self, free_val):
         if self.simplex_size == 1:
             return jnp.zeros((), dtype=free_val.dtype)
         y = jnp.reshape(free_val, (self._m, self.simplex_size - 1))
-        return jnp.sum(jax.vmap(self._simplex.log_det)(y))
+        return jnp.sum(jax.vmap(self._simplex.compute_log_det)(y))
 
     def _folded_to_free(self, folded_val):
         x = jnp.reshape(jnp.asarray(folded_val), (self._m, self.simplex_size))
-        return jnp.reshape(jax.vmap(self._simplex.inverse)(x), (-1,))
+        return jnp.reshape(jax.vmap(self._simplex.unconstrain)(x), (-1,))
 
     def _validate(self, folded_val, validate_value):
         msg = check_shape(folded_val, self.shape)
@@ -153,10 +153,10 @@ class StochasticMatrixPattern(Pattern):
         self._free_shape = (self.rows - 1, self.cols) if kind == "column" else (self.rows, self.cols - 1)
         super().__init__(flat_length=self.rows * self.cols, free_length=int(np.prod(self._free_shape)))
 
-    def as_dict(self):
+    def to_dict(self):
         return {"rows": self.rows, "cols": self.cols, "kind": self.kind, "bijector": self.bijector}
 
-    def code_to_generate(self, *, module: str = "pg", indent: int = 4) -> str:
+    def generate_code(self, *, module: str = "pg", indent: int = 4) -> str:
         kwargs = {"kind": repr(self.kind)}
         if self.bijector != "stan":
             kwargs["bijector"] = repr(self.bijector)
@@ -175,19 +175,19 @@ class StochasticMatrixPattern(Pattern):
     def _free_to_folded(self, free_val):
         y = self._free_matrix(free_val)
         if self.kind == "column":
-            return jax.vmap(self._simplex.forward, in_axes=1, out_axes=1)(y)
-        return jax.vmap(self._simplex.forward)(y)
+            return jax.vmap(self._simplex.constrain, in_axes=1, out_axes=1)(y)
+        return jax.vmap(self._simplex.constrain)(y)
 
     def _free_to_folded_log_det(self, free_val):
         y = self._free_matrix(free_val)
-        return jnp.sum(jax.vmap(self._simplex.log_det, in_axes=1 if self.kind == "column" else 0)(y))
+        return jnp.sum(jax.vmap(self._simplex.compute_log_det, in_axes=1 if self.kind == "column" else 0)(y))
 
     def _folded_to_free(self, folded_val):
         x = jnp.asarray(folded_val)
         if self.kind == "column":
-            y = jax.vmap(self._simplex.inverse, in_axes=1, out_axes=1)(x)
+            y = jax.vmap(self._simplex.unconstrain, in_axes=1, out_axes=1)(x)
         else:
-            y = jax.vmap(self._simplex.inverse)(x)
+            y = jax.vmap(self._simplex.unconstrain)(x)
         return jnp.reshape(y, (-1,), order="F")
 
     def _validate(self, folded_val, validate_value):
@@ -212,13 +212,13 @@ class SumToZeroVectorPattern(Pattern):
         self.length = int(length)
         if self.length < 1:
             raise ValueError("length must be >= 1")
-        self._a = jnp.asarray(sum_to_zero_matrix(self.length - 1))
+        self._a = jnp.asarray(make_sum_to_zero_matrix(self.length - 1))
         super().__init__(flat_length=self.length, free_length=self.length - 1)
 
-    def as_dict(self):
+    def to_dict(self):
         return {"length": self.length}
 
-    def code_to_generate(self, *, module: str = "pg", indent: int = 4) -> str:
+    def generate_code(self, *, module: str = "pg", indent: int = 4) -> str:
         return format_call(module=module, name="SumToZeroVectorPattern", args=[str(self.length)])
 
     def _flat_to_folded(self, flat_val):
@@ -256,14 +256,14 @@ class SumToZeroMatrixPattern(Pattern):
         if self.rows < 1 or self.cols < 1:
             raise ValueError("rows and cols must be >= 1")
         self.shape = (self.rows, self.cols)
-        self._b_rows = jnp.asarray(sum_to_zero_matrix_basis(self.rows))
-        self._b_cols = jnp.asarray(sum_to_zero_matrix_basis(self.cols))
+        self._b_rows = jnp.asarray(make_sum_to_zero_matrix_basis(self.rows))
+        self._b_cols = jnp.asarray(make_sum_to_zero_matrix_basis(self.cols))
         super().__init__(flat_length=self.rows * self.cols, free_length=(self.rows - 1) * (self.cols - 1))
 
-    def as_dict(self):
+    def to_dict(self):
         return {"rows": self.rows, "cols": self.cols}
 
-    def code_to_generate(self, *, module: str = "pg", indent: int = 4) -> str:
+    def generate_code(self, *, module: str = "pg", indent: int = 4) -> str:
         return format_call(module=module, name="SumToZeroMatrixPattern", args=[str(self.rows), str(self.cols)])
 
     def _flat_to_folded(self, flat_val):

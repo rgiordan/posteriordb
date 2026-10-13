@@ -88,11 +88,11 @@ class Pattern(ABC):
         value checks only when `validate_value`."""
 
     @abstractmethod
-    def as_dict(self) -> dict:
+    def to_dict(self) -> dict:
         """A JSON-able description, used for equality and printing."""
 
     @abstractmethod
-    def code_to_generate(self, *, module: str = "pg", indent: int = 4) -> str:
+    def generate_code(self, *, module: str = "pg", indent: int = 4) -> str:
         """Python code that constructs this pattern, assuming paragami is
         imported as `module` (`module=""` for names imported directly).
         Arguments at their defaults are left out."""
@@ -121,16 +121,16 @@ class Pattern(ABC):
 
     # -- lengths and names -------------------------------------------------------
 
-    def flat_length(self) -> int:
+    def get_flat_length(self) -> int:
         return self._flat_length
 
-    def free_length(self) -> int:
+    def get_free_length(self) -> int:
         return self._free_length
 
-    def flat_names(self) -> List[str]:
+    def get_flat_names(self) -> List[str]:
         return self._names(free=False)
 
-    def free_names(self) -> List[str]:
+    def get_free_names(self) -> List[str]:
         return self._names(free=True)
 
     # -- conversions ---------------------------------------------------------------
@@ -190,16 +190,16 @@ class Pattern(ABC):
             return False, str(e)
         return True, ""
 
-    def empty(self, *, valid: bool = True):
+    def make_empty(self, *, valid: bool = True):
         """A folded value of the right shape: valid if `valid`, else NaNs."""
-        folded = self._free_to_folded(jnp.zeros(self.free_length()))
+        folded = self._free_to_folded(jnp.zeros(self.get_free_length()))
         if valid:
             return folded
         return jax.tree_util.tree_map(lambda x: jnp.full_like(x, jnp.nan), folded)
 
-    def random(self, key, *, scale: float = 1.0):
+    def draw_random(self, key, *, scale: float = 1.0):
         """A random valid folded value: a standard normal free vector, folded."""
-        return self._free_to_folded(scale * jax.random.normal(key, (self.free_length(),)))
+        return self._free_to_folded(scale * jax.random.normal(key, (self.get_free_length(),)))
 
     # -- helpers ------------------------------------------------------------------
 
@@ -220,13 +220,13 @@ class Pattern(ABC):
             raise ValidationError(f"{self}: {msg}")
 
     def __eq__(self, other):
-        return type(self) is type(other) and self.as_dict() == other.as_dict()
+        return type(self) is type(other) and self.to_dict() == other.to_dict()
 
     def __hash__(self):
-        return hash(repr(self.as_dict()))
+        return hash(repr(self.to_dict()))
 
     def __repr__(self):
-        d = {k: v for k, v in self.as_dict().items() if k != "pattern"}
+        d = {k: v for k, v in self.to_dict().items() if k != "pattern"}
         return f"{type(self).__name__}({', '.join(f'{k}={v}' for k, v in d.items())})"
 
 
@@ -243,7 +243,7 @@ def check_bijector(bijector: str) -> str:
     return bijector
 
 
-# -- helpers for code_to_generate -------------------------------------------------
+# -- helpers for generate_code -------------------------------------------------
 
 def format_value(x) -> str:
     """A Python literal for a number or array of numbers."""
