@@ -8,6 +8,8 @@ import jax.numpy as jnp
 import numpy as np
 from jax.scipy import stats
 
+from ._distributions import lognormal_logpdf
+
 
 def obtain_adjustments(w):
     """Stan's obtain_adjustments, including its operator precedence:
@@ -42,8 +44,7 @@ def sum_to_zero(free):
 
 def log_prior_alpha_lambda(params):
     """alpha ~ lognormal(1, 1); lambda_adj ~ student_t(3, 0, 1)."""
-    alpha = params["alpha"]
-    return (jnp.sum(stats.norm.logpdf(jnp.log(alpha), loc=1.0, scale=1.0) - jnp.log(alpha))
+    return (jnp.sum(lognormal_logpdf(params["alpha"], mu=1.0, sigma=1.0))
             + jnp.sum(stats.t.logpdf(params["lambda_adj"], df=3.0, loc=0.0, scale=1.0)))
 
 

@@ -40,7 +40,8 @@ STAN_GRAD_ATOL = {
     "mnist-nn_rbm1bJ100": 1e-8,
 }
 # Looser Hessian bounds where Hessian entries reach 1e4 to 4e5 (the hidden
-# Markov models' forward recursions): BridgeStan's finite-difference Hessian
+# Markov models' forward recursions; up to 2e8 for accel_gp and hierarchical_gp
+# at some synthetic points): BridgeStan's finite-difference Hessian
 # is then off by up to ~1e-5 of the largest entry, and the bounds are set
 # from that relative error (checked against jax.hessian at random points).
 STAN_HESSIAN_ATOL = {
@@ -48,6 +49,8 @@ STAN_HESSIAN_ATOL = {
     "bball_drive_event_1-hmm_drive_1": 2.0,
     "hmm_gaussian_simulated-hmm_gaussian": 2.0,
     "iohmm_reg_simulated-iohmm_reg": 0.5,
+    "mcycle_gp-accel_gp": 1e-3,
+    "state_wide_presidential_votes-hierarchical_gp": 1e-2,
 }
 # Smaller synthetic free vectors where a standard normal one often lands where
 # Stan's density is -inf: GLMM_Poisson_model's beta2 is bounded to (-10, 20)
@@ -57,10 +60,20 @@ SYNTHETIC_SCALE = {"GLMM_Poisson_data-GLMM_Poisson_model": 0.3}
 # dog's first trial, and their Bernoulli log density differentiates log(1 - p)
 # there. The new versions' gradients match Stan (test_matches_stan).
 OLD_GRADIENT_NAN = {"dogs-dogs_hierarchical", "dogs-dogs_nonhierarchical"}
+# Stan's own values are inaccurate here: kronecker_gp takes eigendecompositions
+# of two matrices with nearly repeated eigenvalues (the kernel matrix's sit at
+# the 1e-5 jitter, and at random points the correlation matrix is nearly
+# singular), so Stan's log density is off by ~1e-8 relative (up to 3e-6) and
+# its eigenvector derivatives by O(1). The catalog version uses a Cholesky
+# factor of the full covariance instead, which agrees to ~1e-11 with a second,
+# independent evaluation (one Cholesky per eigenvalue of the correlation
+# matrix). Its log density is compared with Stan's at a looser bound, and its
+# gradient against finite differences.
+STAN_INACCURATE = {"synthetic_grid_RBF_kernels-kronecker_gp"}
 NO_HESSIAN = {"GLMM_Poisson_data-GLMM_Poisson_model", "ovarian-logistic_regression_rhs", "prostate-logistic_regression_rhs",
               "traffic_accident_nyc-bym2_offset_only", "prideprejudice_chapter-ldaK5",
               "prideprejudice_paragraph-ldaK5", "three_docs1200-ldaK2", "three_men1-ldaK2",
-              "three_men2-ldaK2", "three_men3-ldaK2", "mnist_100-nn_rbm1bJ10", "mnist-nn_rbm1bJ100"}
+              "three_men2-ldaK2", "three_men3-ldaK2", *STAN_INACCURATE, "mnist_100-nn_rbm1bJ10", "mnist-nn_rbm1bJ100"}
 
 
 @pytest.mark.parametrize("name", NAMES)
@@ -105,9 +118,26 @@ def test_matches_stan(name):
     harness = StanComparisonHarness(stan_file_path(catalog.module_for(name).STAN_MODEL), raw)
     report = assert_model_matches_stan(model, harness, n_synthetic=10, check_hessian=name not in NO_HESSIAN,
                                        scale=SYNTHETIC_SCALE.get(name, 1.0))
+    if name in STAN_INACCURATE:
+        assert report.max_abs_err_log_density < 1e-5 and report.max_abs_err_constrained_flat < 1e-9
+        return
     # Scaled errors (see assert_model_matches_stan). BridgeStan's Hessian is
     # finite differences of gradients, hence the looser Hessian bound.
     report.assert_within(atol=STAN_GRAD_ATOL.get(name, 1e-9), atol_hessian=STAN_HESSIAN_ATOL.get(name, 1e-4), atol_log_density=1e-11)
+
+
+@pytest.mark.parametrize("name", sorted(STAN_INACCURATE))
+def test_gradient_matches_finite_differences(name):
+    model = catalog.load(name)
+    f = jax.jit(model.log_density_fn("joint", params_as="free"))
+    rng = np.random.default_rng(0)
+    x = rng.normal(size=model.params_pattern.free_length())
+    grad = np.asarray(jax.grad(f)(jnp.asarray(x)))
+    step = 1e-5
+    for i in rng.choice(x.size, size=10, replace=False):
+        shift = step * np.eye(x.size)[i]
+        fd = (float(f(jnp.asarray(x + shift))) - float(f(jnp.asarray(x - shift)))) / (2.0 * step)
+        assert abs(fd - grad[i]) / (1.0 + abs(grad[i])) < 1e-7
 
 
 def test_list_and_filter():

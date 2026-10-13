@@ -3,6 +3,7 @@ posteriordb models use."""
 
 import jax
 import jax.numpy as jnp
+from jax.scipy import stats
 from jax.scipy.special import gammaln
 
 
@@ -28,3 +29,8 @@ def lkj_corr_cholesky_logpdf(cholesky, *, eta):
     log_normalizer = (jnp.sum(gammaln(effective_eta) - gammaln(j / 2.0 + effective_eta))
                       + jnp.log(jnp.pi) * k * (k - 1) / 4.0)
     return unnormalized - log_normalizer
+
+
+def lognormal_logpdf(x, *, mu, sigma):
+    """Stan's lognormal_lpdf(x | mu, sigma), elementwise."""
+    return stats.norm.logpdf(jnp.log(x), loc=mu, scale=sigma) - jnp.log(x)
