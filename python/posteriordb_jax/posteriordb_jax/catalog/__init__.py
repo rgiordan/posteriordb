@@ -41,6 +41,8 @@ _MODULES = [
     "election88_full",
     "GLM_Binomial_model",
     "GLM_Poisson_model",
+    "GLMM1_model",
+    "GLMM_Poisson_model",
     "gp_pois_regr",
     "gp_regr",
     "hier_2pl",

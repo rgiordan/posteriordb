@@ -23,18 +23,24 @@ NAMES = catalog.list_models()
 #   densities still agree to 1e-11.
 # - For the largest models the Hessian is skipped: jax.hessian is slow at
 #   thousands of free parameters, and BridgeStan's Hessian is finite
-#   differences of gradients, which is too noisy there to compare.
+#   differences of gradients, which is too noisy there to compare. The same
+#   finite differences are too noisy for GLMM_Poisson_model, whose cubic
+#   trend gives Hessian entries of order 1e11.
 STAN_GRAD_ATOL = {
     "irt_2pl-irt_2pl": 1e-7,
     "sat-hier_2pl": 1e-7,
     "ovarian-logistic_regression_rhs": 1e-7,
     "prostate-logistic_regression_rhs": 1e-7,
 }
+# Smaller synthetic free vectors where a standard normal one often lands where
+# Stan's density is -inf: GLMM_Poisson_model's beta2 is bounded to (-10, 20)
+# but has a uniform(-10, 10) prior.
+SYNTHETIC_SCALE = {"GLMM_Poisson_data-GLMM_Poisson_model": 0.3}
 # The old translations of these give nan gradients: p is exactly 1 on each
 # dog's first trial, and their Bernoulli log density differentiates log(1 - p)
 # there. The new versions' gradients match Stan (test_matches_stan).
 OLD_GRADIENT_NAN = {"dogs-dogs_hierarchical", "dogs-dogs_nonhierarchical"}
-NO_HESSIAN = {"ovarian-logistic_regression_rhs", "prostate-logistic_regression_rhs",
+NO_HESSIAN = {"GLMM_Poisson_data-GLMM_Poisson_model", "ovarian-logistic_regression_rhs", "prostate-logistic_regression_rhs",
               "traffic_accident_nyc-bym2_offset_only", "prideprejudice_chapter-ldaK5",
               "prideprejudice_paragraph-ldaK5", "three_docs1200-ldaK2", "three_men1-ldaK2",
               "three_men2-ldaK2", "three_men3-ldaK2"}
@@ -80,7 +86,8 @@ def test_matches_stan(name):
     model = catalog.load(name)
     raw = load_data(load_posterior_info(name)["data_name"])
     harness = StanComparisonHarness(stan_file_path(catalog.module_for(name).STAN_MODEL), raw)
-    report = assert_model_matches_stan(model, harness, n_synthetic=10, check_hessian=name not in NO_HESSIAN)
+    report = assert_model_matches_stan(model, harness, n_synthetic=10, check_hessian=name not in NO_HESSIAN,
+                                       scale=SYNTHETIC_SCALE.get(name, 1.0))
     # Scaled errors (see assert_model_matches_stan). BridgeStan's Hessian is
     # finite differences of gradients, hence the looser Hessian bound.
     report.assert_within(atol=STAN_GRAD_ATOL.get(name, 1e-9), atol_hessian=1e-4, atol_log_density=1e-11)
